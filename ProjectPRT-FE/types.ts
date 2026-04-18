@@ -72,9 +72,3 @@ export interface CaseResponse {
   is_receipt_uploaded: boolean;
   // ... fields อื่นๆ
 }
-
-export interface RevenueIncomeTypeReportEntry {
-  account_code: string;
-  label: string;
-  total: number;
-}

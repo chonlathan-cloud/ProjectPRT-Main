@@ -120,11 +120,10 @@ async def upload_receipt(
         raise HTTPException(status_code=404, detail="Case not found")
 
     doc = db.execute(select(Document).filter_by(case_id=case_id)).scalar_one_or_none()
-    if not doc:
-        raise HTTPException(status_code=400, detail="Document not generated yet.")
+    folder_name = doc.doc_no if doc else db_case.case_no
 
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    destination_blob_name = f"{doc.doc_no}/{timestamp}_{file.filename}"
+    destination_blob_name = f"{folder_name}/{timestamp}_{file.filename}"
     file_content = await file.read()
     gcs_uri = gcs.upload_bytes(
         destination_blob_name,
