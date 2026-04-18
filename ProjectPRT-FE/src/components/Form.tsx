@@ -271,10 +271,9 @@ export const Form: React.FC = () => {
     // 2. Validation สำหรับ PV และ RV
     // ---------------------------------------------------------
     
-    // ✅ จุดที่แก้ไข: เปลี่ยน 're' เป็น 'rv'
-    // ความหมาย: ถ้า "ไม่ใช่ RV" (เช่นเป็น PV) และ "ไม่ได้เลือกหมวด" -> ให้แจ้งเตือน
-    if (data.type !== 'rv' && !selectedCategoryId) {
-      alert("กรุณาเลือกหมวดหมู่บัญชี (Category) ก่อนบันทึก");
+    // ถ้าไม่ใช่ JV ต้องเลือกหมวดหมู่/ประเภทรายได้
+    if (data.type !== 'jv' && !selectedCategoryId) {
+      alert(data.type === 'rv' ? "กรุณาเลือกประเภทรายได้ก่อนบันทึก" : "กรุณาเลือกหมวดหมู่บัญชี (Category) ก่อนบันทึก");
       return false;
     }
 
@@ -592,17 +591,20 @@ export const Form: React.FC = () => {
                 </div>
               </div>
 
-              {/* --- 2. หมวดหมู่บัญชี (Moved below Document Style) --- */}
-            {data.type !== "rv" && (
+              {/* --- 2. หมวดหมู่บัญชี / ประเภทรายได้ --- */}
+            {data.type !== "jv" && (
               <div>
-                <label className={labelStyle}>หมวดหมู่บัญชี (Category) <span className="text-red-500">*</span></label>
+                <label className={labelStyle}>
+                  {data.type === 'rv' ? 'ประเภทรายได้ (Revenue Type)' : 'หมวดหมู่บัญชี (Category)'} 
+                  <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
                   <select 
                     className={`${inputStyle} appearance-none cursor-pointer border-blue-200 bg-blue-50`}
                     value={selectedCategoryId}
                     onChange={(e) => setSelectedCategoryId(e.target.value)}
                   >
-                    <option value="">-- กรุณาเลือกหมวดหมู่ --</option>
+                    <option value="">-- กรุณาเลือก --</option>
                     {categories.map(cat => (
                         <option key={cat.id} value={cat.id}>{cat.name_th}</option>
                     ))}
