@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MoreHorizontal, Wallet, TrendingUp, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, FileText, ExternalLink } from 'lucide-react';
 import  { getDashboardData, DashboardData} from '../services/api';
+import AttachmentPreviewPanel from './AttachmentPreviewPanel';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie
 } from 'recharts';
+
+interface DashboardProps {
+  isDarkMode: boolean;
+  toggleTheme: () => void;
+}
+
+type DashboardTransaction = DashboardData['latestTransactions'][number];
 // --- Initial Empty State (Ready for Backend) ---
 const INITIAL_DATA: DashboardData = {
   summary: {
@@ -25,6 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
   // State for UI interaction
   const [activeCard, setActiveCard] = useState<'expenses' | 'income' | 'balance' | null>(null);
   const [selectedYear, setSelectedYear] = useState<number>(2025);
+  const [selectedTransaction, setSelectedTransaction] = useState<DashboardTransaction | null>(null);
 
   // Connect to Backend
   useEffect(() => {
@@ -44,6 +53,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
 
     fetchData();
   }, [selectedYear]);
+
+  useEffect(() => {
+    const nextSelectedTransaction =
+      data.latestTransactions.find((item) => item.id === selectedTransaction?.id) ||
+      data.latestTransactions.find((item) => item.receipt_url) ||
+      data.latestTransactions[0] ||
+      null;
+
+    setSelectedTransaction(nextSelectedTransaction);
+  }, [data.latestTransactions, selectedTransaction?.id]);
 
   const handlePrevYear = () => {
     setSelectedYear(prev => prev - 1);
@@ -247,7 +266,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
         <div className="space-y-6">
           {data.latestTransactions.length > 0 ? (
             data.latestTransactions.map((item) => (
-              <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
+              <div
+                key={item.id}
+                onClick={() => setSelectedTransaction(item)}
+                className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 group cursor-pointer ${
+                  selectedTransaction?.id === item.id
+                    ? 'border-blue-200 bg-blue-50/60 dark:border-blue-800 dark:bg-blue-900/20'
+                    : 'border-transparent hover:border-slate-100 dark:hover:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
+                }`}
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 rounded-2xl flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold group-hover:scale-105 transition-transform duration-300 shadow-sm">
                     {item.initial}
@@ -266,6 +293,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
                       href={item.receipt_url}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-100/50 dark:border-blue-800/50"
                     >
                       <FileText size={14} />
@@ -287,6 +315,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
             </div>
           )}
         </div>
+
+        {selectedTransaction && (
+          <AttachmentPreviewPanel
+            url={selectedTransaction.receipt_url}
+            title={selectedTransaction.name}
+            subtitle={selectedTransaction.description}
+            className="mt-8 overflow-hidden rounded-3xl border border-slate-100 bg-slate-50/70 shadow-sm dark:border-slate-800 dark:bg-slate-950/60"
+            bodyClassName="flex h-[360px] items-center justify-center bg-slate-100 p-6 dark:bg-slate-950"
+            emptyState={
+              <div className="max-w-md text-center text-slate-500 dark:text-slate-400">
+                <FileText size={48} className="mx-auto mb-4 opacity-30" />
+                <p className="font-semibold text-slate-700 dark:text-slate-200">รายการนี้ยังไม่มีไฟล์แนบ</p>
+                <p className="mt-2 text-sm">หากมีไฟล์แล้ว ระบบจะแสดง preview ในส่วนนี้อัตโนมัติ</p>
+              </div>
+            }
+          />
+        )}
       </div>
     </div>
   );

@@ -37,6 +37,8 @@ class CaseResponse(BaseModel):
     # [NEW] Fields
     deposit_account_id: Optional[UUID] = None
     is_receipt_uploaded: bool
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
 
     created_by: str
     created_at: datetime

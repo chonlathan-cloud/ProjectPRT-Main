@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, and_, or_, text, desc
 from app.models import Document, DocumentType, Case, Category, Attachment, CaseStatus, AuditLog, User
 from app.services.gcs import generate_download_url
+from app.core.settings import settings
 import json
 
 MOCK_POLICY_DATA = """
@@ -39,7 +40,7 @@ def search_document_by_no_tool(db: Session, doc_no: str):
     if doc.pdf_uri:
         try:
             # สมมติว่า pdf_uri เก็บ path เช่น "documents/pv-xxxx.pdf" หรือ "gs://bucket/..."
-            object_name = doc.pdf_uri.replace(f"gs://project-prt-bucket/", "") # ปรับตาม GCS logic คุณ
+            object_name = doc.pdf_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
             # เรียกใช้ฟังก์ชันจาก gcs.py
             file_link = generate_download_url(object_name)
         except Exception as e:

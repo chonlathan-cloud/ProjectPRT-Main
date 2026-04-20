@@ -88,6 +88,22 @@ def generate_signed_download_url(object_name: str) -> str:
     return url
 
 
+def get_blob_content_type(object_name: str) -> str | None:
+    client = _get_storage_client()
+    bucket = client.bucket(settings.GCS_BUCKET_NAME)
+
+    try:
+        blob = bucket.get_blob(object_name)
+    except Exception as exc:
+        logger.warning("Failed to fetch blob metadata for %s: %s", object_name, exc)
+        return None
+
+    if not blob:
+        return None
+
+    return blob.content_type
+
+
 def generate_download_url(object_name: str) -> str:
     client = _get_storage_client()
     bucket = client.bucket(settings.GCS_BUCKET_NAME)
@@ -128,3 +144,10 @@ def upload_bytes(
         except Exception as exc:
             logger.warning("Failed to make object public: %s", exc)
     return f"gs://{settings.GCS_BUCKET_NAME}/{object_name}"
+
+
+def download_bytes(object_name: str) -> bytes:
+    client = _get_storage_client()
+    bucket = client.bucket(settings.GCS_BUCKET_NAME)
+    blob = bucket.blob(object_name)
+    return blob.download_as_bytes()

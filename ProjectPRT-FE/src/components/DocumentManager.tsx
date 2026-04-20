@@ -10,22 +10,22 @@ import {
   FileText,
   Filter
 } from 'lucide-react';
+import { AdminCaseView } from '../../types';
 import { 
-  getInsights, 
   searchDocumentsByNo, 
   uploadDocumentFile, 
-  getCases,
-  InsightsData 
+  getCases
 } from '../services/api';
-import { CaseResponse } from '../../types';
+import AttachmentPreviewPanel from './AttachmentPreviewPanel';
 
 export const DocumentManager: React.FC = () => {
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<AdminCaseView[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showMissingOnly, setShowMissingOnly] = useState(true);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<AdminCaseView | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,6 +40,7 @@ export const DocumentManager: React.FC = () => {
       // Fetch documents from getCases to get the is_receipt_uploaded flag
       const result = await getCases(); 
       setDocuments(result);
+      setSelectedDocument((prev) => result.find((doc) => doc.id === prev?.id) || prev || result[0] || null);
     } catch (err) {
       console.error("Failed to fetch documents:", err);
       setError("Failed to load documents");
@@ -62,6 +63,7 @@ export const DocumentManager: React.FC = () => {
     try {
       const result = await searchDocumentsByNo(searchQuery);
       setDocuments(result);
+      setSelectedDocument(result[0] || null);
     } catch (err) {
       setError("Search failed");
     } finally {
@@ -78,7 +80,6 @@ export const DocumentManager: React.FC = () => {
       await uploadDocumentFile(selectedCaseId, file);
       setUploadSuccess("File uploaded successfully!");
       loadDocuments();
-      setSelectedCaseId(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
       setError("Upload failed. Please try again.");
@@ -206,6 +207,37 @@ export const DocumentManager: React.FC = () => {
         </div>
       )}
 
+      {selectedDocument && (
+        <AttachmentPreviewPanel
+          url={selectedDocument.ps_url}
+          mimeType={selectedDocument.mime_type}
+          title={selectedDocument.doc_no || selectedDocument.case_no}
+          subtitle={`${selectedDocument.requester_name} • ${selectedDocument.requested_amount.toLocaleString()} THB`}
+          actions={
+            <button
+              onClick={() => setSelectedCaseId(selectedDocument.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all ${
+                selectedCaseId === selectedDocument.id
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Upload size={14} />
+              {selectedCaseId === selectedDocument.id ? 'Ready to Upload' : 'Use for Upload'}
+            </button>
+          }
+          className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-xl"
+          bodyClassName="flex h-[420px] items-center justify-center bg-slate-100 p-6"
+          emptyState={
+            <div className="max-w-md text-center text-slate-500">
+              <FileText size={48} className="mx-auto mb-4 opacity-30" />
+              <p className="font-semibold text-slate-700">ยังไม่มีไฟล์ PS สำหรับรายการนี้</p>
+              <p className="mt-2 text-sm">คุณยังสามารถใช้ส่วน Upload ด้านบนเพื่อแนบไฟล์ใหม่ได้</p>
+            </div>
+          }
+        />
+      )}
+
       {/* Document Table */}
       <div className="bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden min-h-[500px]">
         <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
@@ -248,7 +280,17 @@ export const DocumentManager: React.FC = () => {
             <tbody className="divide-y divide-slate-50">
               {visibleDocuments.length > 0 ? (
                 visibleDocuments.map((doc) => (
-                  <tr key={doc.id} className={`hover:bg-slate-50/80 transition-all group ${!doc.is_receipt_uploaded ? 'bg-red-50/30' : ''}`}>
+                  <tr
+                    key={doc.id}
+                    onClick={() => setSelectedDocument(doc)}
+                    className={`cursor-pointer transition-all group hover:bg-slate-50/80 ${
+                      selectedDocument?.id === doc.id
+                        ? 'bg-blue-50/60 ring-1 ring-inset ring-blue-100'
+                        : !doc.is_receipt_uploaded
+                          ? 'bg-red-50/30'
+                          : ''
+                    }`}
+                  >
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-3">
                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${!doc.is_receipt_uploaded ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
@@ -279,7 +321,11 @@ export const DocumentManager: React.FC = () => {
                     </td>
                     <td className="px-8 py-6 text-center">
                       <button 
-                        onClick={() => setSelectedCaseId(doc.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedCaseId(doc.id);
+                          setSelectedDocument(doc);
+                        }}
                         className={`flex items-center gap-2 px-5 py-2 rounded-xl font-black text-xs transition-all ${
                           selectedCaseId === doc.id 
                             ? 'bg-blue-600 text-white shadow-lg' 

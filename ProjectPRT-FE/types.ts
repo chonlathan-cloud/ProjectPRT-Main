@@ -72,3 +72,24 @@ export interface CaseResponse {
   is_receipt_uploaded: boolean;
   // ... fields อื่นๆ
 }
+
+export interface AdminCaseView {
+  id: string;
+  case_no: string;
+  doc_no?: string;
+  requester_name: string;
+  description: string;
+  requested_amount: number;
+  created_at: string;
+  status: string;
+  department?: string;
+  is_receipt_uploaded: boolean;
+  ps_url?: string | null;
+  mime_type?: string | null;
+}
+
+export interface SignaturePlacement {
+  x: number;
+  y: number;
+  width: number;
+}

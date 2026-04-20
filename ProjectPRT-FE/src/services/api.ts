@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Category, CasePayload, CaseResponse, User, BankAccount } from '../../types';
+import { Category, CasePayload, CaseResponse, User, BankAccount, AdminCaseView, SignaturePlacement } from '../../types';
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 const API_BASE_URL = `${BASE_URL}/api/v1`;
 // --- CONFIGURATION ---
@@ -14,6 +14,13 @@ export interface WorkflowResponse {
   case_id: string;
   status: string;
   doc_no?: string;
+  audit_details?: {
+    approved_by?: string;
+    approved_at?: string;
+    signature_attachment_id?: string;
+    signature_url?: string;
+    approved_pdf_url?: string;
+  };
 }
 
 // Auto-inject Token
@@ -187,15 +194,22 @@ export const submitCase = async (caseId: string): Promise<WorkflowResponse> => {
   return response.data;
 };
 // [NEW] ดึงรายการ Case (รองรับการกรองสถานะ)
-export const getCases = async (status?: string): Promise<CaseResponse[]> => {
+export const getCases = async (status?: string): Promise<AdminCaseView[]> => {
   const query = status ? `?status=${status}` : '';
   const response = await api.get(`/cases/${query}`);
   // Backend อาจจะส่งเป็น Array ตรงๆ หรือห่อด้วย data envelope ให้เช็คดู (ตามโค้ด Backend ล่าสุดน่าจะส่ง Array ตรงๆ)
   return Array.isArray(response.data) ? response.data : (response.data.data || []);
 };
 // สั่งอนุมัติ Case
-export const approveCase = async (caseId: string): Promise<WorkflowResponse> => {
-  const response = await api.post(`/cases/${caseId}/approve`);
+export const approveCase = async (
+  caseId: string,
+  signatureBase64: string,
+  signaturePosition?: SignaturePlacement
+): Promise<WorkflowResponse> => {
+  const response = await api.post(`/cases/${caseId}/approve`, {
+    signature_base64: signatureBase64,
+    signature_position: signaturePosition,
+  });
   return response.data;
 };
 // [NEW] เพิ่มฟังก์ชันสำหรับ Reject/Cancel
@@ -266,7 +280,7 @@ export const getInsights = async (requesterId?: string, month?: number, year?: n
   return response.data.data;
 };
 // Search Documents by Doc No (for JV Consolidation)
-export const searchDocumentsByNo = async (docNo: string): Promise<any[]> => {
+export const searchDocumentsByNo = async (docNo: string): Promise<AdminCaseView[]> => {
   const response = await api.get(`/cases/search-by-doc?doc_no=${encodeURIComponent(docNo)}`);
   return Array.isArray(response.data) ? response.data : (response.data.data || []);
 };
