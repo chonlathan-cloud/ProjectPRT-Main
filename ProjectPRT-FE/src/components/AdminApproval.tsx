@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminCaseView, SignaturePlacement } from '../../types';
 import { getCases, approveCase, rejectCase } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
@@ -7,7 +7,6 @@ import DraggableSignatureOverlay from './DraggableSignatureOverlay';
 import {
   createTransparentSignatureDataUrl,
   getDefaultSignatureCleanupThreshold,
-  getDefaultSignaturePlacement,
 } from '../utils/signatureProcessing';
 import { 
   CheckCircle, 
@@ -46,35 +45,8 @@ const PDF_PREVIEW_PAPER_BOUNDS = {
 
 const APPROVER_SIGNATURE_SNAP: SignaturePlacement = {
   x: 0.58,
-  y: 0.62,
+  y: 0.75,
   width: 0.20,
-};
-
-const isNearPlacement = (current: SignaturePlacement, target: SignaturePlacement, tolerance = 0.025) =>
-  Math.abs(current.x - target.x) <= tolerance &&
-  Math.abs(current.y - target.y) <= tolerance &&
-  Math.abs(current.width - target.width) <= tolerance;
-
-const getSignatureSizeLabel = (width: number) => {
-  if (width < 0.18) return 'S';
-  if (width > 0.28) return 'L';
-  return 'M';
-};
-
-const getSignaturePositionLabel = (placement: SignaturePlacement) => {
-  if (isNearPlacement(placement, APPROVER_SIGNATURE_SNAP, 0.03)) {
-    return 'บรรทัดผู้อนุมัติ';
-  }
-  if (placement.y > 0.68 && placement.x > 0.55) {
-    return 'ล่างขวา';
-  }
-  if (placement.y > 0.68 && placement.x <= 0.55) {
-    return 'ล่างซ้าย';
-  }
-  if (placement.y <= 0.68 && placement.x > 0.55) {
-    return 'กลางขวา';
-  }
-  return 'กลางซ้าย';
 };
 
 const formatApprovalTimestampUtc = (date: Date) => {
@@ -83,13 +55,11 @@ const formatApprovalTimestampUtc = (date: Date) => {
 };
 
 export const AdminApproval: React.FC = () => {
-  const defaultSignaturePlacement = useMemo(() => getDefaultSignaturePlacement(), []);
   const [cases, setCases] = useState<AdminCaseView[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState<AdminCaseView | null>(null);
   const [userSignature, setUserSignature] = useState<string | null>(null);
   const [signatureSource, setSignatureSource] = useState<string | null>(null);
-  const [signaturePlacement, setSignaturePlacement] = useState<SignaturePlacement>(defaultSignaturePlacement);
   const [signatureCleanupThreshold, setSignatureCleanupThreshold] = useState(getDefaultSignatureCleanupThreshold());
   const [isProcessingSignature, setIsProcessingSignature] = useState(false);
   const [isSignaturePadOpen, setIsSignaturePadOpen] = useState(false);
@@ -111,7 +81,6 @@ export const AdminApproval: React.FC = () => {
   useEffect(() => {
     setIsSigned(false);
     setSignedAt(null);
-    setSignaturePlacement(getDefaultSignaturePlacement());
   }, [selectedCase?.id]);
 
   const applySignature = (signatureDataUrl: string, sourceDataUrl?: string) => {
@@ -121,7 +90,6 @@ export const AdminApproval: React.FC = () => {
     localStorage.setItem('admin_signature_source', sourceDataUrl || signatureDataUrl);
     setIsSigned(false);
     setSignedAt(null);
-    setSignaturePlacement(getDefaultSignaturePlacement());
   };
 
   const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,7 +171,7 @@ export const AdminApproval: React.FC = () => {
     }
 
     try {
-      const response = await approveCase(caseId, userSignature, signaturePlacement);
+      const response = await approveCase(caseId, userSignature, APPROVER_SIGNATURE_SNAP);
       const approvedItem = cases.find(c => c.id === caseId);
       const approvedPdfUrl = response.audit_details?.approved_pdf_url || null;
       if (approvedItem) {
@@ -285,34 +253,13 @@ export const AdminApproval: React.FC = () => {
     ? approvedPreview?.docNo || selectedCase?.doc_no || selectedCase?.case_no
     : selectedCase?.doc_no || selectedCase?.case_no;
   const previewEyebrow = isShowingApprovedPreview ? 'Approved PDF Preview' : 'Document Preview';
-  const signaturePositionLabel = getSignaturePositionLabel(signaturePlacement);
-  const signatureSizeLabel = getSignatureSizeLabel(signaturePlacement.width);
-  const signatureScaleLabel = `${Math.round(signaturePlacement.width * 100)}%`;
   const previewActions = isShowingApprovedPreview ? null : (
     <div className="flex flex-wrap items-center gap-2">
       {userSignature ? (
         <>
           <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700">
-            ตำแหน่ง: {signaturePositionLabel} • ขนาด: {signatureSizeLabel} ({signatureScaleLabel})
+            ตำแหน่งลายเซ็นถูกล็อกไว้ที่บรรทัดผู้อนุมัติ
           </div>
-          <button
-            onClick={() => setSignaturePlacement(APPROVER_SIGNATURE_SNAP)}
-            className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-100"
-          >
-            Snap เข้าบรรทัดผู้อนุมัติ
-          </button>
-          <button
-            onClick={() => setSignaturePlacement(getDefaultSignaturePlacement())}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
-          >
-            รีเซ็ตตำแหน่ง
-          </button>
-          <button
-            onClick={() => setSignaturePlacement((current) => ({ ...current, width: defaultSignaturePlacement.width }))}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
-          >
-            รีเซ็ตขนาด
-          </button>
           {!isSigned ? (
             <button
               onClick={handleSign}
@@ -343,12 +290,13 @@ export const AdminApproval: React.FC = () => {
       {userSignature && (
         <DraggableSignatureOverlay
           bounds={PDF_PREVIEW_PAPER_BOUNDS}
-          placement={signaturePlacement}
+          placement={APPROVER_SIGNATURE_SNAP}
           signatureDataUrl={userSignature}
           signedAt={signedAt}
-          positionLabel={signaturePositionLabel}
-          sizeLabel={`${signatureSizeLabel} • ${signatureScaleLabel}`}
-          onChange={setSignaturePlacement}
+          positionLabel="บรรทัดผู้อนุมัติ"
+          sizeLabel="Locked"
+          readOnly
+          onChange={() => undefined}
         />
       )}
     </>
@@ -400,7 +348,7 @@ export const AdminApproval: React.FC = () => {
                  </button>
                </div>
                <p className="mt-1 text-[11px] text-slate-500">
-                 เริ่มวางลายเซ็นที่มุมล่างขวาก่อน และสามารถลากปรับตำแหน่งได้บน preview
+                 ระบบจะประทับลายเซ็นลงช่องผู้อนุมัติแบบ fixed position โดยอัตโนมัติ
                </p>
                <div className="mt-2 flex items-center gap-2">
                  <label className="text-[11px] font-semibold text-slate-600">

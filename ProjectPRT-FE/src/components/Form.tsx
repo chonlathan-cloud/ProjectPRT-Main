@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, MoreHorizontal, Plus, Trash2, Download, Save, 
-  Loader2, Upload 
+  Loader2, Upload, CheckCircle2, AlertCircle, Info, X
 } from 'lucide-react';
 import { PaymentVoucherTemplate, ReceiveVoucherTemplate, JournalVoucherTemplate, DocumentData } from './DocumentTemplates';
 import html2canvas from 'html2canvas';
@@ -31,6 +31,30 @@ const INITIAL_DATA: DocumentData = {
 };
 
 const FORM_STORAGE_KEY = 'pending_form_data';
+
+type NoticeType = 'success' | 'error' | 'warning' | 'info';
+
+interface FormNotice {
+  type: NoticeType;
+  title: string;
+  message: string;
+}
+
+interface FormFieldErrors {
+  jvLinkedCases?: string;
+  jvMainCase?: string;
+  category?: string;
+  bankAccount?: string;
+  psFile?: string;
+  items?: string;
+}
+
+interface SuccessSummary {
+  title: string;
+  docNo: string;
+  status: string;
+  description: string;
+}
 
 export const Form: React.FC = () => {
   // --- Load Persistent State ---
@@ -73,6 +97,95 @@ export const Form: React.FC = () => {
   const psUploadRef = useRef<HTMLInputElement>(null);
   const [selectedPsFile, setSelectedPsFile] = useState<File | null>(null);
   const [psPreviewUrl, setPsPreviewUrl] = useState<string | null>(null);
+  const [notice, setNotice] = useState<FormNotice | null>(null);
+  const [successSummary, setSuccessSummary] = useState<SuccessSummary | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FormFieldErrors>({});
+  const jvSectionRef = useRef<HTMLDivElement>(null);
+  const categoryFieldRef = useRef<HTMLDivElement>(null);
+  const bankAccountFieldRef = useRef<HTMLDivElement>(null);
+  const psUploadSectionRef = useRef<HTMLDivElement>(null);
+  const itemsSectionRef = useRef<HTMLDivElement>(null);
+
+  const showNotice = (type: NoticeType, title: string, message: string) => {
+    setNotice({ type, title, message });
+  };
+
+  const buildFreshFormData = (docType: DocumentData['type']): DocumentData => {
+    let storedName = '';
+    let storedPosition = '';
+
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        const userObj = JSON.parse(storedUser);
+        storedName = userObj.name || '';
+        storedPosition = userObj.position || '';
+      }
+    } catch (error) {
+      console.error('Failed to read user defaults', error);
+    }
+
+    return {
+      ...INITIAL_DATA,
+      type: docType,
+      name: storedName,
+      position: storedPosition,
+    };
+  };
+
+  const resetFormForNewDocument = () => {
+    const nextDocType = data.type;
+    const nextTransactionType = nextDocType === 'rv' ? 'REVENUE' : 'EXPENSE';
+
+    setData(buildFreshFormData(nextDocType));
+    setTransactionType(nextTransactionType);
+    setSelectedCategoryId('');
+    setSelectedBankAccountId('');
+    setSelectedPsFile(null);
+    setLinkedCaseIds([]);
+    setLinkedCases([]);
+    setMainCaseId('');
+    setSearchResults([]);
+    setSearchQuery('');
+    setFieldErrors({});
+    setNotice(null);
+    setSuccessSummary(null);
+    localStorage.removeItem(FORM_STORAGE_KEY);
+  };
+
+  const clearFieldError = (field: keyof FormFieldErrors) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const focusFirstInvalidSection = (errors: FormFieldErrors) => {
+    if (errors.jvLinkedCases || errors.jvMainCase) {
+      jvSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (errors.category) {
+      categoryFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (errors.bankAccount) {
+      bankAccountFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (errors.psFile) {
+      psUploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (errors.items) {
+      itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
 
   // Manage PS File Preview URL
   useEffect(() => {
@@ -97,6 +210,18 @@ export const Form: React.FC = () => {
     };
     localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(stateToSave));
   }, [data, selectedCategoryId, transactionType, linkedCaseIds, linkedCases, mainCaseId, selectedBankAccountId]);
+
+  useEffect(() => {
+    if (!notice || notice.type === 'error') {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNotice(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
 
   // 1. โหลดข้อมูลเมื่อเข้าหน้า Form
   useEffect(() => {
@@ -155,6 +280,9 @@ export const Form: React.FC = () => {
 
   const handleInputChange = (field: keyof DocumentData, value: string) => {
     setData(prev => ({ ...prev, [field]: value }));
+    if (field === 'purpose' || field === 'type') {
+      clearFieldError('items');
+    }
     // ย้าย Logic เช็ค type มาไว้ตรงนี้ เพราะ type อยู่ระดับ DocumentData ไม่ใช่ Item
     if (field === 'type') {
       if (value === 'rv'){
@@ -179,6 +307,7 @@ export const Form: React.FC = () => {
         item.id === id ? { ...item, [field]: value } : item
       )
     }));
+    clearFieldError('items');
   };
 
   const addItem = () => {
@@ -193,6 +322,7 @@ export const Form: React.FC = () => {
         refNo: ''
       }]
     }));
+    clearFieldError('items');
   };
 
   const removeItem = (id: string) => {
@@ -201,6 +331,7 @@ export const Form: React.FC = () => {
       ...prev,
       items: prev.items.filter(item => item.id !== id)
     }));
+    clearFieldError('items');
   };
 
   const clearJvState = () => {
@@ -210,25 +341,34 @@ export const Form: React.FC = () => {
     setSearchResults([]);
     setSearchQuery('');
     setData(prev => ({ ...prev, items: [...INITIAL_DATA.items] }));
+    clearFieldError('jvLinkedCases');
+    clearFieldError('jvMainCase');
+    clearFieldError('items');
   };
 
   const handleSaveToBackend = async (autoGeneratedPdf?: File): Promise<string | null> => {
+    setFieldErrors({});
     // ---------------------------------------------------------
     // 1. ตรวจสอบและจัดการ JV (Journal Voucher) เป็นอันดับแรก
 
     // ---------------------------------------------------------
     if (data.type === 'jv') {
+        const validationErrors: FormFieldErrors = {};
+
         if (linkedCaseIds.length === 0) {
-            alert("กรุณาดึงข้อมูลเอกสาร (Pull) อย่างน้อย 1 รายการเพื่อทำ JV");
-            return false;
+            validationErrors.jvLinkedCases = "กรุณาดึงข้อมูลเอกสาร (Pull) อย่างน้อย 1 รายการเพื่อทำ JV";
         }
         if (!mainCaseId) {
-            alert("กรุณาเลือกเคสหลัก (Main Case) ก่อนสร้าง JV");
-            return false;
+            validationErrors.jvMainCase = "กรุณาเลือกเคสหลัก (Main Case) ก่อนสร้าง JV";
+        } else if (!linkedCaseIds.includes(mainCaseId)) {
+            validationErrors.jvMainCase = "เคสหลักต้องอยู่ในรายการที่ดึง";
         }
-        if (!linkedCaseIds.includes(mainCaseId)) {
-            alert("เคสหลักต้องอยู่ในรายการที่ดึง");
-            return false;
+
+        if (Object.keys(validationErrors).length > 0) {
+            setFieldErrors(validationErrors);
+            showNotice('warning', 'ข้อมูลยังไม่ครบ', 'กรุณาตรวจสอบส่วนรวมเอกสารสำหรับ JV ที่ถูกไฮไลต์');
+            focusFirstInvalidSection(validationErrors);
+            return null;
         }
 
         setIsSaving(true);
@@ -254,13 +394,18 @@ export const Form: React.FC = () => {
               timestamp: now 
             }));
             localStorage.removeItem(FORM_STORAGE_KEY); // Clear after success
-            alert(`สร้าง JV สำเร็จ! เลขที่: ${res.doc_no}`);
+            setSuccessSummary({
+              title: 'สร้าง JV สำเร็จ',
+              docNo: res.doc_no,
+              status: 'สร้างเอกสารแล้ว',
+              description: 'ระบบได้สร้างเอกสาร JV เรียบร้อยแล้ว คุณสามารถเริ่มเอกสารใหม่ต่อได้ทันที',
+            });
             return res.doc_no;
 
         } catch (error: any) {
             console.error('JV Save failed:', error);
             const msg = error.response?.data?.detail || error.message;
-            alert(`สร้าง JV ไม่สำเร็จ: ${msg}`);
+            showNotice('error', 'สร้าง JV ไม่สำเร็จ', String(msg));
             return null;
         } finally {
             setIsSaving(false);
@@ -272,20 +417,28 @@ export const Form: React.FC = () => {
     // ---------------------------------------------------------
     
     // ถ้าไม่ใช่ JV ต้องเลือกหมวดหมู่/ประเภทรายได้
+    const validationErrors: FormFieldErrors = {};
+
     if (data.type !== 'jv' && !selectedCategoryId) {
-      alert(data.type === 'rv' ? "กรุณาเลือกประเภทรายได้ก่อนบันทึก" : "กรุณาเลือกหมวดหมู่บัญชี (Category) ก่อนบันทึก");
-      return null;
+      validationErrors.category = data.type === 'rv'
+        ? "กรุณาเลือกประเภทรายได้ก่อนบันทึก"
+        : "กรุณาเลือกหมวดหมู่บัญชี (Category) ก่อนบันทึก";
     }
 
     // เช็คบัญชีธนาคารสำหรับ RV (Income)
     if (transactionType === 'REVENUE' && !selectedBankAccountId) {
-        alert("กรุณาเลือกบัญชีธนาคาร/เงินสด ที่รับเงินเข้า")
-        return null;
+        validationErrors.bankAccount = "กรุณาเลือกบัญชีธนาคาร/เงินสด ที่รับเงินเข้า";
     }
 
     // PV ต้องมีไฟล์ ปส ที่ผู้ใช้อัปโหลดก่อนส่งอนุมัติ
     if (data.type === 'pv' && !selectedPsFile) {
-      alert("กรุณาอัปโหลดใบ ปส ก่อนส่งอนุมัติ");
+      validationErrors.psFile = "กรุณาอัปโหลดใบ ปส ก่อนส่งอนุมัติ";
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors);
+      showNotice('warning', 'ข้อมูลยังไม่ครบ', 'กรุณาตรวจสอบฟิลด์ที่ถูกไฮไลต์ก่อนบันทึกเอกสาร');
+      focusFirstInvalidSection(validationErrors);
       return null;
     }
 
@@ -304,7 +457,10 @@ export const Form: React.FC = () => {
       }, 0);
 
       if (totalAmount <= 0) {
-        alert("กรุณากรอกราคา/จำนวนให้มากกว่า 0");
+        const itemError = { items: "กรุณากรอกราคา/จำนวนให้มากกว่า 0" };
+        setFieldErrors(itemError);
+        showNotice('warning', 'จำนวนเงินไม่ถูกต้อง', itemError.items);
+        focusFirstInvalidSection(itemError);
         return null;
       }
 
@@ -347,7 +503,9 @@ export const Form: React.FC = () => {
           await uploadDocumentFile(newCase.id, psFileToUpload, 'PS');
         } catch (uploadError) {
           console.error('PS File upload failed:', uploadError);
-          alert("ไม่สามารถอัปโหลดไฟล์ ปส ได้ จึงยังไม่ส่งเอกสารเข้าอนุมัติ");
+          setFieldErrors({ psFile: "ไม่สามารถอัปโหลดไฟล์ ปส ได้ จึงยังไม่ส่งเอกสารเข้าอนุมัติ" });
+          showNotice('error', 'อัปโหลดใบ ปส ไม่สำเร็จ', 'กรุณาลองใหม่อีกครั้งก่อนส่งเอกสารเข้าอนุมัติ');
+          focusFirstInvalidSection({ psFile: "upload" });
           return null;
         }
       }
@@ -363,13 +521,18 @@ export const Form: React.FC = () => {
         setSelectedPsFile(null);
       }
 
-      alert(`บันทึกสำเร็จ! \nเลขที่อ้างอิง: ${displayDocNo} \n(สถานะ: รออนุมัติ/Submitted)`);
+      setSuccessSummary({
+        title: 'บันทึกเอกสารสำเร็จ',
+        docNo: displayDocNo,
+        status: 'รออนุมัติ / Submitted',
+        description: 'ระบบได้บันทึกเอกสารและส่งเข้ากระบวนการอนุมัติแล้ว พร้อมดาวน์โหลด PDF ให้เรียบร้อย',
+      });
       return displayDocNo;
 
     } catch (error: any) {
       console.error('Save failed:', error);
       const msg = error.response?.data?.error?.message || error.message;
-      alert(`บันทึกไม่สำเร็จ: ${msg}`);
+      showNotice('error', 'บันทึกเอกสารไม่สำเร็จ', String(msg));
       return null;
     } finally {
       setIsSaving(false);
@@ -385,11 +548,11 @@ export const Form: React.FC = () => {
       const results = await searchDocumentsByNo(searchQuery);
       setSearchResults(results);
       if (results.length === 0) {
-        alert("ไม่พบเอกสารที่ระบุ");
+        showNotice('info', 'ไม่พบเอกสาร', 'ไม่พบเอกสารที่ตรงกับเลขที่ที่ระบุ');
       }
     } catch (error) {
       console.error("Search failed:", error);
-      alert("เกิดข้อผิดพลาดในการค้นหา");
+      showNotice('error', 'ค้นหาไม่สำเร็จ', 'เกิดข้อผิดพลาดในการค้นหาเอกสาร');
     } finally {
       setIsSearchingDocs(false);
     }
@@ -433,8 +596,11 @@ export const Form: React.FC = () => {
       // ลบแถวว่างทิ้งแล้วเติมของใหม่
       items: [...prev.items.filter(i => i.description !== ''), pulledItem]
     }));
+    clearFieldError('jvLinkedCases');
+    clearFieldError('jvMainCase');
+    clearFieldError('items');
     
-    alert(`ดึงข้อมูลจาก ${normalized.doc_no} เรียบร้อย (Case ID: ${doc.id})`);
+    showNotice('success', 'ดึงข้อมูลเอกสารสำเร็จ', `${normalized.doc_no} ถูกเพิ่มเข้าในรายการแล้ว`);
   };
 
   const generatePDF = async (action: 'submit' | 'download') => {
@@ -535,15 +701,119 @@ export const Form: React.FC = () => {
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('เกิดข้อผิดพลาดในการสร้าง PDF');
+      showNotice('error', 'สร้าง PDF ไม่สำเร็จ', 'เกิดข้อผิดพลาดในการสร้าง PDF');
     }
   };
 
   const inputStyle = "w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all text-sm";
   const labelStyle = "block text-sm font-semibold text-gray-600 mb-2";
+  const errorTextStyle = "mt-2 text-xs font-semibold text-red-600";
+  const errorInputStyle = "border-red-300 bg-red-50 focus:ring-red-100";
+  const noticeStyles: Record<NoticeType, { icon: React.ReactNode; panel: string; iconWrap: string; title: string }> = {
+    success: {
+      icon: <CheckCircle2 className="h-5 w-5" />,
+      panel: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+      iconWrap: 'bg-emerald-100 text-emerald-600',
+      title: 'text-emerald-900',
+    },
+    error: {
+      icon: <AlertCircle className="h-5 w-5" />,
+      panel: 'border-red-200 bg-red-50 text-red-800',
+      iconWrap: 'bg-red-100 text-red-600',
+      title: 'text-red-900',
+    },
+    warning: {
+      icon: <AlertCircle className="h-5 w-5" />,
+      panel: 'border-amber-200 bg-amber-50 text-amber-800',
+      iconWrap: 'bg-amber-100 text-amber-600',
+      title: 'text-amber-900',
+    },
+    info: {
+      icon: <Info className="h-5 w-5" />,
+      panel: 'border-sky-200 bg-sky-50 text-sky-800',
+      iconWrap: 'bg-sky-100 text-sky-600',
+      title: 'text-sky-900',
+    },
+  };
 
   return (
     <div className="h-full bg-gray-50/50 p-6 overflow-y-auto">
+      {successSummary && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[2rem] border border-emerald-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-600">
+                <CheckCircle2 className="h-7 w-7" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-500">Success</p>
+                <h3 className="mt-1 text-2xl font-black text-slate-900">{successSummary.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-500">{successSummary.description}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuccessSummary(null)}
+                className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">เลขที่อ้างอิง</p>
+                <p className="mt-1 text-xl font-black text-slate-900">{successSummary.docNo}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">สถานะ</p>
+                <p className="mt-1 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-700">
+                  {successSummary.status}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setSuccessSummary(null)}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                ปิด
+              </button>
+              <button
+                type="button"
+                onClick={resetFormForNewDocument}
+                className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white transition-colors hover:bg-emerald-700"
+              >
+                สร้างเอกสารใหม่
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div className="fixed right-6 top-6 z-50 w-full max-w-md">
+          <div className={`rounded-2xl border shadow-xl backdrop-blur-sm ${noticeStyles[notice.type].panel}`}>
+            <div className="flex items-start gap-3 p-4">
+              <div className={`rounded-xl p-2 ${noticeStyles[notice.type].iconWrap}`}>
+                {noticeStyles[notice.type].icon}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-black ${noticeStyles[notice.type].title}`}>{notice.title}</p>
+                <p className="mt-1 whitespace-pre-line text-sm leading-6">{notice.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotice(null)}
+                className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-white/60 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-[1600px] mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-slate-800">Form</h1>
@@ -588,16 +858,19 @@ export const Form: React.FC = () => {
 
               {/* --- 2. หมวดหมู่บัญชี / ประเภทรายได้ --- */}
             {data.type !== "jv" && (
-              <div>
+              <div ref={categoryFieldRef}>
                 <label className={labelStyle}>
                   {data.type === 'rv' ? 'ประเภทรายได้ (Revenue Type)' : 'หมวดหมู่บัญชี (Category)'} 
                   <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <select 
-                    className={`${inputStyle} appearance-none cursor-pointer border-blue-200 bg-blue-50`}
+                    className={`${inputStyle} appearance-none cursor-pointer border-blue-200 bg-blue-50 ${fieldErrors.category ? errorInputStyle : ''}`}
                     value={selectedCategoryId}
-                    onChange={(e) => setSelectedCategoryId(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedCategoryId(e.target.value);
+                      clearFieldError('category');
+                    }}
                   >
                     <option value="">-- กรุณาเลือก --</option>
                     {categories.map(cat => (
@@ -610,11 +883,15 @@ export const Form: React.FC = () => {
                     </svg>
                   </div>
                 </div>
+                {fieldErrors.category && <p className={errorTextStyle}>{fieldErrors.category}</p>}
               </div>
             )}
               {/* --- 3. JV Document Consolidation Search (Show only for JV) --- */}
               {data.type === 'jv' && (
-                <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-2xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div
+                  ref={jvSectionRef}
+                  className={`p-5 rounded-2xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-300 ${fieldErrors.jvLinkedCases || fieldErrors.jvMainCase ? 'border border-red-200 bg-red-50/70' : 'border border-blue-100 bg-blue-50/50'}`}
+                >
                   <label className="text-sm font-black text-blue-700 flex items-center gap-2">
                     <Search className="w-4 h-4" />
                     ดึงข้อมูลเอกสารเพื่อรวมใบเดียว (Consolidate)
@@ -680,7 +957,10 @@ export const Form: React.FC = () => {
                               </span>
                             ) : (
                               <button
-                                onClick={() => setMainCaseId(c.id)}
+                                onClick={() => {
+                                  setMainCaseId(c.id);
+                                  clearFieldError('jvMainCase');
+                                }}
                                 className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-black hover:bg-emerald-200"
                               >
                                 ตั้งเป็นเคสหลัก
@@ -689,6 +969,11 @@ export const Form: React.FC = () => {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {(fieldErrors.jvLinkedCases || fieldErrors.jvMainCase) && (
+                    <div className="rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700">
+                      {fieldErrors.jvLinkedCases || fieldErrors.jvMainCase}
                     </div>
                   )}
                 </div>
@@ -746,15 +1031,16 @@ export const Form: React.FC = () => {
 
                {/* Bank Account Dropdown for RV */}
                {data.type === 'rv' && (
-                  <div>
+                  <div ref={bankAccountFieldRef}>
                     <label className={labelStyle}>เลขที่บัญชีธนาคาร/เงินสด</label>
                     <div className="relative">
                       <select 
-                        className={`${inputStyle} appearance-none cursor-pointer`}
+                        className={`${inputStyle} appearance-none cursor-pointer ${fieldErrors.bankAccount ? errorInputStyle : ''}`}
                         value={selectedBankAccountId} // ใช้ เป็น ID เป็น Value 
                         onChange={(e) => {
                           const id = e.target.value;
                           setSelectedBankAccountId(id);
+                          clearFieldError('bankAccount');
                           // หา Object เพื่อเอาชื่อมาโชว์ใน Preview Template
                           const account = bankAccounts.find(b => b.id === id);
                           if (account) {
@@ -777,6 +1063,7 @@ export const Form: React.FC = () => {
                         </svg>
                       </div>
                     </div>
+                    {fieldErrors.bankAccount && <p className={errorTextStyle}>{fieldErrors.bankAccount}</p>}
                   </div>
                )}
 
@@ -799,19 +1086,22 @@ export const Form: React.FC = () => {
                    </div>
 
                    {/* PS Upload Button */}
-                   <div>
+                   <div ref={psUploadSectionRef}>
                      <label className={labelStyle}>อัปโหลดใบ ปส</label>
                      <div className="flex flex-col gap-3">
                        <input 
                          type="file" 
                          className="hidden" 
                          ref={psUploadRef}
-                         onChange={(e) => setSelectedPsFile(e.target.files?.[0] || null)}
+                         onChange={(e) => {
+                           setSelectedPsFile(e.target.files?.[0] || null);
+                           clearFieldError('psFile');
+                         }}
                          accept=".pdf,.jpg,.jpeg,.png"
                        />
                        <button 
-                         onClick={() => psUploadRef.current?.click()}
-                         className="flex items-center justify-center gap-2 p-3 bg-blue-50 border border-dashed border-blue-200 rounded-xl text-blue-600 hover:bg-blue-100 transition-all text-sm font-medium"
+                          onClick={() => psUploadRef.current?.click()}
+                         className={`flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed text-sm font-medium transition-all ${fieldErrors.psFile ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100' : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
                        >
                          <Upload size={18} />
                          {selectedPsFile ? selectedPsFile.name : 'เลือกไฟล์ ปส (PDF, JPEG, PNG)'}
@@ -846,6 +1136,7 @@ export const Form: React.FC = () => {
                                e.preventDefault();
                                e.stopPropagation();
                                setSelectedPsFile(null);
+                               clearFieldError('psFile');
                              }}
                              className="absolute top-4 right-4 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md transition-colors"
                              title="ลบไฟล์"
@@ -855,6 +1146,7 @@ export const Form: React.FC = () => {
                          </div>
                        )}
                      </div>
+                     {fieldErrors.psFile && <p className={errorTextStyle}>{fieldErrors.psFile}</p>}
                    </div>
                  </div>
                )}
@@ -885,17 +1177,18 @@ export const Form: React.FC = () => {
 
 
 
-              <div>
+              <div ref={itemsSectionRef}>
                 <div className="flex justify-between items-center mb-4">
                    <label className={labelStyle}>รายการที่เบิก / ทำ</label>
                    <button onClick={addItem} className="text-blue-500 text-sm font-medium flex items-center hover:text-blue-600">
                      <Plus size={16} className="mr-1" /> เพิ่มรายการ
                    </button>
                 </div>
+                {fieldErrors.items && <p className={`${errorTextStyle} mb-3`}>{fieldErrors.items}</p>}
                 
                 <div className="space-y-3">
                   {data.items.map((item, index) => (
-                    <div key={item.id} className="p-4 bg-gray-50 rounded-xl group relative border border-gray-100 hover:border-blue-100 transition-colors">
+                    <div key={item.id} className={`p-4 rounded-xl group relative border transition-colors ${fieldErrors.items ? 'border-red-200 bg-red-50/60' : 'border-gray-100 bg-gray-50 hover:border-blue-100'}`}>
                        <div className="flex gap-3 items-start">
                           <div className="flex-1">
                              <div className="flex gap-3 mb-4">

@@ -17,6 +17,7 @@ interface DraggableSignatureOverlayProps {
   signedAt?: string | null;
   positionLabel: string;
   sizeLabel: string;
+  readOnly?: boolean;
   onChange: (placement: SignaturePlacement) => void;
 }
 
@@ -29,6 +30,7 @@ export const DraggableSignatureOverlay: React.FC<DraggableSignatureOverlayProps>
   signedAt,
   positionLabel,
   sizeLabel,
+  readOnly = false,
   onChange,
 }) => {
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -37,7 +39,7 @@ export const DraggableSignatureOverlay: React.FC<DraggableSignatureOverlayProps>
   useEffect(() => {
     const overlayElement = overlayRef.current;
     const resizeHandle = resizeHandleRef.current;
-    if (!overlayElement || !resizeHandle) {
+    if (!overlayElement || !resizeHandle || readOnly) {
       return;
     }
 
@@ -131,12 +133,12 @@ export const DraggableSignatureOverlay: React.FC<DraggableSignatureOverlayProps>
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [bounds.height, bounds.left, bounds.top, bounds.width, onChange, placement]);
+  }, [bounds.height, bounds.left, bounds.top, bounds.width, onChange, placement, readOnly]);
 
   return (
     <div
       ref={overlayRef}
-      className="absolute z-20 cursor-move select-none"
+      className={`absolute z-20 select-none ${readOnly ? 'cursor-default' : 'cursor-move'}`}
       style={{
         left: `${(bounds.left + (placement.x * bounds.width)) * 100}%`,
         top: `${(bounds.top + (placement.y * bounds.height)) * 100}%`,
@@ -147,19 +149,21 @@ export const DraggableSignatureOverlay: React.FC<DraggableSignatureOverlayProps>
         <span className="rounded-full bg-white/90 px-2 py-1 shadow-sm ring-1 ring-indigo-100">{positionLabel}</span>
         <span className="rounded-full bg-white/90 px-2 py-1 shadow-sm ring-1 ring-indigo-100">{sizeLabel}</span>
       </div>
-      <div className="relative border border-dashed border-indigo-300/80 bg-transparent px-0.5 py-0.5 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+      <div className={`relative bg-transparent px-0.5 py-0.5 shadow-[0_4px_18px_rgba(15,23,42,0.04)] ${readOnly ? 'border border-indigo-200/90' : 'border border-dashed border-indigo-300/80'}`}>
         <img src={signatureDataUrl} alt="signature" className="w-full h-auto object-contain" />
         <div className="mt-0.5 text-center text-[8px] font-medium text-slate-500">
           {signedAt || 'Approved at: pending'}
         </div>
       </div>
-      <button
-        ref={resizeHandleRef}
-        type="button"
-        className="absolute -bottom-3 -right-3 flex h-7 w-7 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-500 shadow-md"
-      >
-        <CornerDownRight className="h-4 w-4" />
-      </button>
+      {!readOnly && (
+        <button
+          ref={resizeHandleRef}
+          type="button"
+          className="absolute -bottom-3 -right-3 flex h-7 w-7 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-500 shadow-md"
+        >
+          <CornerDownRight className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 };
