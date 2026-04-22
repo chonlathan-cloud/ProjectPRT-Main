@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, ArrowRight } from 'lucide-react';
+import { Lock, User, ArrowRight, Loader2 } from 'lucide-react';
 import { login } from '../services/api'; 
 
 interface LoginFormProps {
@@ -61,7 +61,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200 backdrop-blur-sm">
           
           <div className="p-8 text-center border-b border-gray-100">
-            <div className="flex w-full justify-center items-center mb-6 transition-transform hover:scale-105 duration-300">
+            <div className={`flex w-full justify-center items-center mb-6 transition-transform duration-300 ${isLoading ? 'animate-pulse' : 'hover:scale-105'}`}>
               <img src="/metta-logo.png" alt="METTA Logo" className="h-24 w-auto object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Welcome METTA</h1>
@@ -69,7 +69,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
           </div>
 
           <div className="p-8 space-y-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" aria-busy={isLoading}>
               <div className="space-y-1">
                 <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1">
                   Email
@@ -84,6 +84,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    disabled={isLoading}
                     className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl leading-5 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 sm:text-sm"
                     placeholder="name@example.com"
                     required
@@ -104,6 +105,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={isLoading}
                     className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl leading-5 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 sm:text-sm"
                     placeholder="••••••••"
                     required
@@ -125,7 +127,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
                 }`}
               >
                 {isLoading ? (
-                  <span className="flex items-center">
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Signing in...
                   </span>
                 ) : (
@@ -134,6 +137,22 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
                   </span>
                 )}
               </button>
+
+              {isLoading && (
+                <div className="overflow-hidden rounded-xl border border-blue-100 bg-blue-50">
+                  <div className="h-1 w-full bg-blue-100">
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500"></div>
+                  </div>
+                  <div className="flex items-center gap-3 px-4 py-3 text-sm text-blue-700">
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-blue-500 [animation-delay:-0.2s]"></span>
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-blue-500 [animation-delay:-0.1s]"></span>
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-blue-500"></span>
+                    </div>
+                    <span className="font-medium">Authenticating your account. Please wait...</span>
+                  </div>
+                </div>
+              )}
             </form>
 
             <div className="mt-4 text-center">
@@ -142,6 +161,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
                 <button
                   type="button"
                   onClick={onSwitchToSignUp}
+                  disabled={isLoading}
                   className="text-blue-600 hover:text-blue-700 font-medium focus:outline-none"
                 >
                   Sign Up

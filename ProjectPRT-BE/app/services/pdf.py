@@ -177,10 +177,10 @@ def generate_approved_document_pdf(
 
 def stamp_signature_on_pdf(
     *,
-    original_pdf_bytes: bytes,
-    signature_bytes: bytes,
-    approved_at: datetime,
-    signature_position: dict[str, Any] | None = None,
+    original_pdf_bytes: bytes, # The original PDF by User
+    signature_bytes: bytes, # Picture of signature by Owner
+    approved_at: datetime, # Timestamp of approval
+    signature_position: dict[str, Any] | None = None, # Optional position for signature placement (x, y, width as normalized values between 0 and 1
 ) -> bytes:
     _ensure_reportlab()
     _ensure_pdf_stamper()

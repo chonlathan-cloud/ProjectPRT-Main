@@ -7,7 +7,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 
 from app.services.doc_numbers import generate_document_no
 
@@ -58,6 +58,14 @@ class CaseRejectRequest(BaseModel):
     note: str
 
 
+class PaginatedCaseAdminResponse(BaseModel):
+    items: List[CaseAdminView]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
 class SignaturePlacementRequest(BaseModel):
     x: float = Field(..., ge=0.0, le=1.0)
     y: float = Field(..., ge=0.0, le=1.0)
@@ -87,6 +95,50 @@ def _get_case_folder_name(db: Session, db_case: Case) -> str:
     if doc and doc.doc_no:
         return doc.doc_no
     return db_case.case_no
+
+
+def _can_see_all_cases(current_user: UserInDB) -> bool:
+    return any(role in current_user.roles for role in [
+        Role.FINANCE, Role.ACCOUNTING, Role.ADMIN, Role.EXECUTIVE, Role.TREASURY
+    ])
+
+
+def _map_case_admin_results(db: Session, results: list) -> list[CaseAdminView]:
+    case_ids = [row.id for row in results]
+    ps_map: dict[UUID, tuple[str, Optional[str]]] = {}
+    if case_ids:
+        ps_rows = db.query(Attachment.case_id, Attachment.gcs_uri, Attachment.uploaded_at)\
+            .filter(
+                Attachment.type == AttachmentType.PS,
+                Attachment.case_id.in_(case_ids)
+            )\
+            .order_by(Attachment.case_id, desc(Attachment.uploaded_at))\
+            .all()
+        for case_id, gcs_uri, _uploaded_at in ps_rows:
+            if case_id not in ps_map:
+                ps_map[case_id] = (gcs_uri, gcs.get_blob_content_type(gcs_uri))
+
+    mapped_results = []
+    for row in results:
+        ps_attachment = ps_map.get(row.id)
+        ps_gcs_uri = ps_attachment[0] if ps_attachment else None
+        ps_mime_type = ps_attachment[1] if ps_attachment else None
+        mapped_results.append(CaseAdminView(
+            id=row.id,
+            case_no=row.case_no,
+            doc_no=row.doc_no if row.doc_no else "-",
+            requester_name=row.requester_name if row.requester_name else "Unknown",
+            description=row.description,
+            requested_amount=float(row.requested_amount),
+            created_at=row.created_at,
+            status=row.status.value,
+            department=row.department,
+            is_receipt_uploaded=bool(row.is_receipt_uploaded),
+            ps_url=gcs.generate_signed_download_url(ps_gcs_uri) if ps_gcs_uri else None,
+            mime_type=ps_mime_type
+        ))
+
+    return mapped_results
 
 
 def _decode_signature_payload(signature_base64: str) -> tuple[bytes, str, str]:
@@ -454,9 +506,7 @@ async def read_cases(
         .outerjoin(User, Case.requester_id == User.email)
     )
 
-    can_see_all = any(role in current_user.roles for role in [
-        Role.FINANCE, Role.ACCOUNTING, Role.ADMIN, Role.EXECUTIVE, Role.TREASURY
-    ])
+    can_see_all = _can_see_all_cases(current_user)
     if not can_see_all:
         query = query.where(Case.requester_id == current_user.username)
 
@@ -467,41 +517,63 @@ async def read_cases(
 
     results = db.execute(query).all()
 
-    case_ids = [row.id for row in results]
-    ps_map: dict[UUID, tuple[str, Optional[str]]] = {}
-    if case_ids:
-        ps_rows = db.query(Attachment.case_id, Attachment.gcs_uri, Attachment.uploaded_at)\
-            .filter(
-                Attachment.type == AttachmentType.PS,
-                Attachment.case_id.in_(case_ids)
-            )\
-            .order_by(Attachment.case_id, desc(Attachment.uploaded_at))\
-            .all()
-        for case_id, gcs_uri, _uploaded_at in ps_rows:
-            if case_id not in ps_map:
-                ps_map[case_id] = (gcs_uri, gcs.get_blob_content_type(gcs_uri))
+    return _map_case_admin_results(db, results)
 
-    mapped_results = []
-    for row in results:
-        ps_attachment = ps_map.get(row.id)
-        ps_gcs_uri = ps_attachment[0] if ps_attachment else None
-        ps_mime_type = ps_attachment[1] if ps_attachment else None
-        mapped_results.append(CaseAdminView(
-            id=row.id,
-            case_no=row.case_no,
-            doc_no=row.doc_no if row.doc_no else "-",
-            requester_name=row.requester_name if row.requester_name else "Unknown",
-            description=row.description,
-            requested_amount=float(row.requested_amount),
-            created_at=row.created_at,
-            status=row.status.value,
-            department=row.department,
-            is_receipt_uploaded=bool(row.is_receipt_uploaded),
-            ps_url=gcs.generate_signed_download_url(ps_gcs_uri) if ps_gcs_uri else None,
-            mime_type=ps_mime_type
-        ))
 
-    return mapped_results
+@router.get("/paged", response_model=PaginatedCaseAdminResponse)
+async def read_cases_paged(
+    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    status: Optional[CaseStatus] = None,
+    missing_only: bool = False,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100)
+):
+    conditions = []
+    if not _can_see_all_cases(current_user):
+        conditions.append(Case.requester_id == current_user.username)
+    if status:
+        conditions.append(Case.status == status)
+    if missing_only:
+        conditions.append(Case.is_receipt_uploaded.is_(False))
+
+    count_query = select(func.count()).select_from(Case)
+    if conditions:
+        count_query = count_query.where(*conditions)
+    total = db.execute(count_query).scalar_one()
+
+    query = (
+        select(
+            Case.id,
+            Case.case_no,
+            Case.purpose.label("description"),
+            Case.requested_amount,
+            Case.created_at,
+            Case.status,
+            Case.is_receipt_uploaded,
+            Case.department_id.label("department"),
+            Document.doc_no,
+            User.name.label("requester_name")
+        )
+        .outerjoin(Document, Case.id == Document.case_id)
+        .outerjoin(User, Case.requester_id == User.email)
+    )
+
+    if conditions:
+        query = query.where(*conditions)
+
+    query = query.order_by(Case.created_at.desc()).offset((page - 1) * limit).limit(limit)
+    results = db.execute(query).all()
+    items = _map_case_admin_results(db, results)
+    total_pages = (total + limit - 1) // limit if total else 0
+
+    return PaginatedCaseAdminResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages
+    )
 
 @router.get("/search-by-doc", response_model=List[CaseAdminView])
 async def search_cases(
@@ -542,6 +614,58 @@ async def search_cases(
             mime_type=ps_mime_type
         ))
     return mapped_results
+
+
+@router.get("/search-by-doc-paged", response_model=PaginatedCaseAdminResponse)
+async def search_cases_paged(
+    current_user: Annotated[UserInDB, Depends(get_current_user)], # ค้นหาจากเลขเอกสาาร 
+    db: Session = Depends(get_db),  
+    doc_no: str = Query(..., min_length=3),
+    missing_only: bool = False, # filter list per page
+    page: int = Query(1, ge=1), # Document Number
+    limit: int = Query(20, ge=1, le=100) # Number limit per page
+):
+    conditions = [Document.doc_no.ilike(f"%{doc_no}%")] # Find  Document Number
+    if not _can_see_all_cases(current_user):
+        conditions.append(Case.requester_id == current_user.username)
+    if missing_only:
+        conditions.append(Case.is_receipt_uploaded.is_(False))
+
+    count_query = select(func.count()).select_from(Case).join(Document, Case.id == Document.case_id)
+    total = db.execute(count_query.where(*conditions)).scalar_one()
+
+    query = (
+        select(
+            Case.id,
+            Case.case_no,
+            Case.purpose.label("description"),
+            Case.requested_amount,
+            Case.created_at,
+            Case.status,
+            Case.is_receipt_uploaded,
+            Case.department_id.label("department"),
+            Document.doc_no,
+            User.name.label("requester_name")
+        )
+        .join(Document, Case.id == Document.case_id)
+        .outerjoin(User, Case.requester_id == User.email)
+        .where(*conditions)
+        .order_by(Case.created_at.desc())
+        .offset((page - 1) * limit) # skip row how many per page
+        .limit(limit) # select row how many per page
+    )
+
+    results = db.execute(query).all()
+    items = _map_case_admin_results(db, results)
+    total_pages = (total + limit - 1) // limit if total else 0
+
+    return PaginatedCaseAdminResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages
+    )
 
 @router.get("/{case_id}", response_model=CaseResponse)
 async def read_case(

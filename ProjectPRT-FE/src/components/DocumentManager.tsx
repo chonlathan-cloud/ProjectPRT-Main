@@ -8,39 +8,56 @@ import {
   Clock, 
   X,
   FileText,
-  Filter
+  Filter,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { AdminCaseView } from '../../types';
 import { 
-  searchDocumentsByNo, 
+  searchDocumentsByNoPage, 
   uploadDocumentFile, 
-  getCases
+  getCasesPage
 } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
+
+const PAGE_SIZE = 20;
 
 export const DocumentManager: React.FC = () => {
   const [documents, setDocuments] = useState<AdminCaseView[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showMissingOnly, setShowMissingOnly] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalDocuments, setTotalDocuments] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<AdminCaseView | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const visibleDocuments = showMissingOnly
-  ? documents.filter((doc) => !doc.is_receipt_uploaded)
-  : documents;
 
-
-  const loadDocuments = async () => {
+  const loadDocuments = async (page = currentPage, search = appliedSearchQuery, missingOnly = showMissingOnly) => {
     setLoading(true);
+    setError(null);
+
     try {
-      // Fetch documents from getCases to get the is_receipt_uploaded flag
-      const result = await getCases(); 
-      setDocuments(result);
-      setSelectedDocument((prev) => result.find((doc) => doc.id === prev?.id) || prev || result[0] || null);
+      const result = search
+        ? await searchDocumentsByNoPage(search, { page, limit: PAGE_SIZE, missingOnly })
+        : await getCasesPage({ page, limit: PAGE_SIZE, missingOnly });
+
+      setDocuments(result.items);
+      setTotalDocuments(result.total);
+      setTotalPages(result.total_pages);
+
+      if (result.total_pages > 0 && page > result.total_pages) {
+        setCurrentPage(result.total_pages);
+        return;
+      }
+
+      setSelectedDocument((prev) => result.items.find((doc) => doc.id === prev?.id) || result.items[0] || null);
+      setSelectedCaseId((prev) => (result.items.some((doc) => doc.id === prev) ? prev : null));
     } catch (err) {
       console.error("Failed to fetch documents:", err);
       setError("Failed to load documents");
@@ -50,25 +67,23 @@ export const DocumentManager: React.FC = () => {
   };
 
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    loadDocuments(currentPage, appliedSearchQuery, showMissingOnly);
+  }, [currentPage, appliedSearchQuery, showMissingOnly]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) {
-      loadDocuments();
+    const nextQuery = searchQuery.trim();
+
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+
+    if (nextQuery !== appliedSearchQuery || currentPage !== 1) {
+      setAppliedSearchQuery(nextQuery);
       return;
     }
-    setLoading(true);
-    try {
-      const result = await searchDocumentsByNo(searchQuery);
-      setDocuments(result);
-      setSelectedDocument(result[0] || null);
-    } catch (err) {
-      setError("Search failed");
-    } finally {
-      setLoading(false);
-    }
+
+    loadDocuments(1, nextQuery, showMissingOnly);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,13 +94,24 @@ export const DocumentManager: React.FC = () => {
     try {
       await uploadDocumentFile(selectedCaseId, file);
       setUploadSuccess("File uploaded successfully!");
-      loadDocuments();
+      await loadDocuments(currentPage, appliedSearchQuery, showMissingOnly);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
       setError("Upload failed. Please try again.");
     } finally {
       setUploading(false);
     }
+  };
+
+  const startItem = totalDocuments === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const endItem = totalDocuments === 0 ? 0 : Math.min(currentPage * PAGE_SIZE, totalDocuments);
+  const hasActiveSearch = appliedSearchQuery.length > 0; // show data in table like showing 1-20 for PV-2604
+
+  const resetFilters = () => {
+    setSearchQuery(''); // clear text in search box
+    setAppliedSearchQuery(''); // clear search really in use
+    setShowMissingOnly(true); // reset to default filter "Show Missing Only"
+    setCurrentPage(1); // payback to page 1
   };
 
   return (
@@ -246,11 +272,17 @@ export const DocumentManager: React.FC = () => {
              <h2 className="text-2xl font-black text-slate-800">Document Registry</h2>
           </div>
           <div className="flex gap-4">
-             <button onClick={loadDocuments} className="p-3 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
+             <button
+               onClick={() => loadDocuments(currentPage, appliedSearchQuery, showMissingOnly)}
+               className="p-3 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+             >
                <Clock size={20} />
              </button>
              <button
-                onClick={() => setShowMissingOnly((prev) => !prev)}
+                onClick={() => {
+                  setCurrentPage(1);
+                  setShowMissingOnly((prev) => !prev);
+                }}
                 className="flex items-center gap-2 px-6 py-2.5 bg-white border-2 border-slate-200 rounded-xl font-black text-sm hover:border-slate-300 transition-all"
               >
                 <Filter size={16} />
@@ -278,8 +310,8 @@ export const DocumentManager: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {visibleDocuments.length > 0 ? (
-                visibleDocuments.map((doc) => (
+              {documents.length > 0 ? (
+                documents.map((doc) => (
                   <tr
                     key={doc.id}
                     onClick={() => setSelectedDocument(doc)}
@@ -342,13 +374,45 @@ export const DocumentManager: React.FC = () => {
                 <tr>
                   <td colSpan={6} className="px-8 py-32 text-center text-slate-400">
                      <FileSearch size={64} className="mx-auto mb-4 opacity-20" />
-                     <p className="text-xl font-black">No matching records found</p>
-                     <button onClick={loadDocuments} className="text-blue-600 font-bold mt-2 hover:underline">Clear all filters</button>
+                     <p className="text-xl font-black">{hasActiveSearch ? 'No matching records found' : 'No documents found'}</p>
+                     <button onClick={resetFilters} className="text-blue-600 font-bold mt-2 hover:underline">Clear all filters</button>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex flex-col gap-4 border-t border-slate-100 bg-slate-50/70 px-8 py-5 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm font-bold text-slate-500">
+            Showing {startItem}-{endItem} of {totalDocuments.toLocaleString()} documents
+            {showMissingOnly ? ' with missing receipts' : ''}
+            {hasActiveSearch ? ` for "${appliedSearchQuery}"` : ''}
+          </div>
+
+          <div className="flex items-center gap-3 self-end md:self-auto">
+            <button
+              onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+              disabled={currentPage <= 1 || loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft size={16} />
+              Prev
+            </button>
+
+            <div className="min-w-[120px] text-center text-sm font-black text-slate-700">
+              Page {totalPages === 0 ? 0 : currentPage} / {totalPages}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages || 1))}
+              disabled={currentPage >= totalPages || totalPages === 0 || loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
 

@@ -83,6 +83,14 @@ export interface ProfitLossBackendData {
   [templateName: string]: ProfitLossEntry[];
 }
 
+export interface PaginatedCaseResponse {
+  items: AdminCaseView[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
 // --- AUTH TYPES ---
 export interface LoginPayload {
   email: string;
@@ -200,6 +208,23 @@ export const getCases = async (status?: string): Promise<AdminCaseView[]> => {
   // Backend อาจจะส่งเป็น Array ตรงๆ หรือห่อด้วย data envelope ให้เช็คดู (ตามโค้ด Backend ล่าสุดน่าจะส่ง Array ตรงๆ)
   return Array.isArray(response.data) ? response.data : (response.data.data || []);
 };
+
+export const getCasesPage = async (params?: {
+  status?: string;
+  page?: number;
+  limit?: number;
+  missingOnly?: boolean;
+}): Promise<PaginatedCaseResponse> => {
+  const query = new URLSearchParams();
+  if (params?.status) query.append('status', params.status);
+  if (params?.page) query.append('page', params.page.toString());
+  if (params?.limit) query.append('limit', params.limit.toString());
+  if (params?.missingOnly) query.append('missing_only', 'true');
+
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const response = await api.get(`/cases/paged${suffix}`);
+  return response.data;
+};
 // สั่งอนุมัติ Case
 export const approveCase = async (
   caseId: string,
@@ -283,6 +308,24 @@ export const getInsights = async (requesterId?: string, month?: number, year?: n
 export const searchDocumentsByNo = async (docNo: string): Promise<AdminCaseView[]> => {
   const response = await api.get(`/cases/search-by-doc?doc_no=${encodeURIComponent(docNo)}`);
   return Array.isArray(response.data) ? response.data : (response.data.data || []);
+};
+
+export const searchDocumentsByNoPage = async (
+  docNo: string,
+  params?: {
+    page?: number;
+    limit?: number;
+    missingOnly?: boolean;
+  }
+): Promise<PaginatedCaseResponse> => {
+  const query = new URLSearchParams();
+  query.append('doc_no', docNo);
+  if (params?.page) query.append('page', params.page.toString());
+  if (params?.limit) query.append('limit', params.limit.toString());
+  if (params?.missingOnly) query.append('missing_only', 'true');
+
+  const response = await api.get(`/cases/search-by-doc-paged?${query.toString()}`);
+  return response.data;
 };
 
 // API สำหรับสร้าง JV
