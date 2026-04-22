@@ -46,6 +46,17 @@ def _format_datetime(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+# These values are page-relative, derived from the FE preview slot:
+# preview bounds = { left: 0.105, top: 0.095, width: 0.79, height: 0.84 }
+# preview slot   = { x: 0.58, y: 0.75, width: 0.20 }
+# page x         = 0.105 + (0.58 * 0.79) = 0.5632
+# page top       = 0.095 + (0.75 * 0.84) = 0.7250
+# page width     = 0.20 * 0.79 = 0.1580
+FIXED_APPROVER_SIGNATURE_X = 0.5632
+FIXED_APPROVER_SIGNATURE_TOP = 0.725
+FIXED_APPROVER_SIGNATURE_WIDTH = 0.158
+
+
 def generate_approved_document_pdf(
     *,
     doc_type: str,
@@ -194,13 +205,11 @@ def stamp_signature_on_pdf(
     page_width = float(first_page.mediabox.width)
     page_height = float(first_page.mediabox.height)
 
-    normalized_x = 0.66
-    normalized_y = 0.74
-    normalized_width = 0.22
-    if signature_position:
-        normalized_x = _clamp(float(signature_position.get("x", normalized_x)), 0.0, 1.0)
-        normalized_y = _clamp(float(signature_position.get("y", normalized_y)), 0.0, 1.0)
-        normalized_width = _clamp(float(signature_position.get("width", normalized_width)), 0.08, 0.5)
+    # Signature placement is fixed to the approver slot on the PS template.
+    _ = signature_position
+    normalized_x = FIXED_APPROVER_SIGNATURE_X
+    normalized_top = FIXED_APPROVER_SIGNATURE_TOP
+    normalized_width = FIXED_APPROVER_SIGNATURE_WIDTH
 
     with Image.open(BytesIO(signature_bytes)) as signature_image:
         source_width, source_height = signature_image.size
@@ -220,12 +229,12 @@ def stamp_signature_on_pdf(
         max(page_padding_x, page_width - signature_width - page_padding_x),
     )
     stamp_top_offset = _clamp(
-        normalized_y * page_height,
+        normalized_top * page_height,
         page_padding_y,
         max(page_padding_y, page_height - stamp_height - page_padding_y),
     )
     signature_y = page_height - stamp_top_offset - signature_height
-
+    
     overlay_buffer = BytesIO()
     overlay_canvas = canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
     overlay_canvas.drawImage(
