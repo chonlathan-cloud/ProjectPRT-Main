@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +18,11 @@ from app.routers.admin import router as admin_router
 from app.routers.chat import router as chat_router
 from app.routers import insights  # ✅ ต้อง import module นี้
 from app.routers.profit_loss import router as profit_loss_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(asctime)s %(name)s %(message)s",
+)
 
 app = FastAPI(
     title="PRT Software Accounting API",

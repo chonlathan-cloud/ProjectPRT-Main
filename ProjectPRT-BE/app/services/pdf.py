@@ -1,3 +1,4 @@
+import logging
 from io import BytesIO
 from datetime import datetime
 from typing import Any
@@ -24,6 +25,9 @@ except ImportError:  # pragma: no cover - defensive path for missing optional de
     PdfWriter = None
 
 
+logger = logging.getLogger(__name__)
+
+
 def _ensure_reportlab():
     if canvas is None or letter is None or A4 is None or ImageReader is None or colors is None:
         raise RuntimeError(
@@ -46,15 +50,21 @@ def _format_datetime(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-# These values are page-relative, derived from the FE preview slot:
-# preview bounds = { left: 0.105, top: 0.095, width: 0.79, height: 0.84 }
-# preview slot   = { x: 0.58, y: 0.75, width: 0.20 }
-# page x         = 0.105 + (0.58 * 0.79) = 0.5632
-# page top       = 0.095 + (0.75 * 0.84) = 0.7250
-# page width     = 0.20 * 0.79 = 0.1580
-FIXED_APPROVER_SIGNATURE_X = 0.5632
-FIXED_APPROVER_SIGNATURE_TOP = 0.725
-FIXED_APPROVER_SIGNATURE_WIDTH = 0.158
+# Source of truth for the owner approval slot on the real PS PDF page.
+# These are page-relative values, not FE preview-relative coordinates.
+FIXED_OWNER_SIGNATURE_X = 0.58
+FIXED_OWNER_SIGNATURE_TOP = 0.825
+FIXED_OWNER_SIGNATURE_WIDTH = 0.145
+FIXED_OWNER_TIMESTAMP_FONT_SIZE = 8
+FIXED_OWNER_TIMESTAMP_GAP = 8
+
+
+def get_fixed_owner_signature_slot() -> dict[str, float]:
+    return {
+        "x": FIXED_OWNER_SIGNATURE_X,
+        "top": FIXED_OWNER_SIGNATURE_TOP,
+        "width": FIXED_OWNER_SIGNATURE_WIDTH,
+    }
 
 
 def generate_approved_document_pdf(
@@ -205,11 +215,12 @@ def stamp_signature_on_pdf(
     page_width = float(first_page.mediabox.width)
     page_height = float(first_page.mediabox.height)
 
-    # Signature placement is fixed to the approver slot on the PS template.
-    _ = signature_position
-    normalized_x = FIXED_APPROVER_SIGNATURE_X
-    normalized_top = FIXED_APPROVER_SIGNATURE_TOP
-    normalized_width = FIXED_APPROVER_SIGNATURE_WIDTH
+    # Signature placement is fixed to the owner slot on the PS template.
+    fixed_slot = get_fixed_owner_signature_slot()
+    requested_position = signature_position
+    normalized_x = fixed_slot["x"]
+    normalized_top = fixed_slot["top"]
+    normalized_width = fixed_slot["width"]
 
     with Image.open(BytesIO(signature_bytes)) as signature_image:
         source_width, source_height = signature_image.size
@@ -217,8 +228,8 @@ def stamp_signature_on_pdf(
     signature_width = _clamp(page_width * normalized_width, 72.0, page_width * 0.38)
     signature_height = signature_width * (source_height / max(source_width, 1))
     timestamp_text = f"Approved at: {_format_datetime(approved_at)}"
-    timestamp_font_size = 8
-    timestamp_gap = 6
+    timestamp_font_size = FIXED_OWNER_TIMESTAMP_FONT_SIZE
+    timestamp_gap = FIXED_OWNER_TIMESTAMP_GAP
     page_padding_x = 14
     page_padding_y = 18
     stamp_height = signature_height + timestamp_gap + timestamp_font_size
@@ -234,6 +245,24 @@ def stamp_signature_on_pdf(
         max(page_padding_y, page_height - stamp_height - page_padding_y),
     )
     signature_y = page_height - stamp_top_offset - signature_height
+    timestamp_x = page_width - page_padding_x
+    timestamp_y = page_padding_y
+
+    logger.warning(
+        "Stamping approved PDF signature with fixed owner slot: requested_position=%s slot=%s page=(%.2f, %.2f) "
+        "signature_size=(%.2f, %.2f) signature_xy=(%.2f, %.2f) stamp_top_offset=%.2f timestamp_footer=(%.2f, %.2f)",
+        requested_position,
+        fixed_slot,
+        page_width,
+        page_height,
+        signature_width,
+        signature_height,
+        signature_x,
+        signature_y,
+        stamp_top_offset,
+        timestamp_x,
+        timestamp_y,
+    )
     
     overlay_buffer = BytesIO()
     overlay_canvas = canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
@@ -248,9 +277,9 @@ def stamp_signature_on_pdf(
     )
     overlay_canvas.setFillColor(colors.HexColor("#475569"))
     overlay_canvas.setFont("Helvetica", timestamp_font_size)
-    overlay_canvas.drawString(
-        signature_x,
-        max(page_padding_y, signature_y - timestamp_gap - timestamp_font_size),
+    overlay_canvas.drawRightString(
+        timestamp_x,
+        timestamp_y,
         timestamp_text,
     )
     overlay_canvas.save()

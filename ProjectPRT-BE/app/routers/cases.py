@@ -377,6 +377,7 @@ async def approve_case(
         approved_at=approval_timestamp,
         signature_position=payload.signature_position.model_dump() if payload.signature_position else None,
     )
+    applied_signature_slot = pdf_service.get_fixed_owner_signature_slot()
     approved_pdf_blob_name = f"{folder_name}/{signature_timestamp}_{doc_no}_approved.pdf"
     approved_pdf_uri = gcs.upload_bytes(
         approved_pdf_blob_name,
@@ -405,7 +406,8 @@ async def approve_case(
             "signature_attachment_id": str(signature_attachment.id),
             "signature_gcs_uri": signature_blob_name,
             "approved_pdf_uri": approved_pdf_uri,
-            "signature_position": payload.signature_position.model_dump() if payload.signature_position else None,
+            "requested_signature_position": payload.signature_position.model_dump() if payload.signature_position else None,
+            "applied_signature_slot": applied_signature_slot,
         }
     )
     db.commit()
@@ -421,6 +423,7 @@ async def approve_case(
             "signature_attachment_id": str(signature_attachment.id),
             "signature_url": gcs.generate_signed_download_url(signature_blob_name),
             "approved_pdf_url": gcs.generate_signed_download_url(approved_pdf_blob_name),
+            "applied_signature_slot": applied_signature_slot,
         }
     )
 

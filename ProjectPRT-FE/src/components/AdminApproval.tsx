@@ -44,9 +44,9 @@ const PDF_PREVIEW_PAPER_BOUNDS = {
 };
 
 const APPROVER_SIGNATURE_SNAP: SignaturePlacement = {
-  x: 0.58,
-  y: 0.75,
-  width: 0.20,
+  x: 0.6,
+  y: 0.87,
+  width: 0.18,
 };
 
 const formatApprovalTimestampUtc = (date: Date) => {
@@ -255,10 +255,10 @@ export const AdminApproval: React.FC = () => {
   const previewEyebrow = isShowingApprovedPreview ? 'Approved PDF Preview' : 'Document Preview';
   const previewActions = isShowingApprovedPreview ? null : (
     <div className="flex flex-wrap items-center gap-2">
-      {userSignature ? (
+          {userSignature ? (
         <>
           <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700">
-            ตำแหน่งลายเซ็นถูกล็อกไว้ที่บรรทัดผู้อนุมัติ
+            ตำแหน่งลายเซ็นถูกล็อกไว้ที่ช่องผู้อนุมัติล่างขวา โดยไฟล์จริงยึด backend slot
           </div>
           {!isSigned ? (
             <button
@@ -293,7 +293,7 @@ export const AdminApproval: React.FC = () => {
           placement={APPROVER_SIGNATURE_SNAP}
           signatureDataUrl={userSignature}
           signedAt={signedAt}
-          positionLabel="บรรทัดผู้อนุมัติ"
+          positionLabel="ช่องผู้อนุมัติล่างขวา"
           sizeLabel="Locked"
           readOnly
           onChange={() => undefined}
@@ -348,7 +348,7 @@ export const AdminApproval: React.FC = () => {
                  </button>
                </div>
                <p className="mt-1 text-[11px] text-slate-500">
-                 ระบบจะประทับลายเซ็นลงช่องผู้อนุมัติแบบ fixed position โดยอัตโนมัติ
+                 preview ใช้เพื่อดูคร่าว ๆ ของ owner slot ส่วนไฟล์ approved PDF จะยึดตำแหน่ง fixed slot ฝั่ง backend
                </p>
                <div className="mt-2 flex items-center gap-2">
                  <label className="text-[11px] font-semibold text-slate-600">
