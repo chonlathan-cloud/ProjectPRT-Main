@@ -18,7 +18,6 @@ import {
   uploadDocumentFile, 
   getCasesPage
 } from '../services/api';
-import AttachmentPreviewPanel from './AttachmentPreviewPanel';
 
 const PAGE_SIZE = 20;
 
@@ -33,7 +32,6 @@ export const DocumentManager: React.FC = () => {
   const [totalDocuments, setTotalDocuments] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-  const [selectedDocument, setSelectedDocument] = useState<AdminCaseView | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -56,7 +54,6 @@ export const DocumentManager: React.FC = () => {
         return;
       }
 
-      setSelectedDocument((prev) => result.items.find((doc) => doc.id === prev?.id) || result.items[0] || null);
       setSelectedCaseId((prev) => (result.items.some((doc) => doc.id === prev) ? prev : null));
     } catch (err) {
       console.error("Failed to fetch documents:", err);
@@ -233,37 +230,6 @@ export const DocumentManager: React.FC = () => {
         </div>
       )}
 
-      {selectedDocument && (
-        <AttachmentPreviewPanel
-          url={selectedDocument.ps_url}
-          mimeType={selectedDocument.mime_type}
-          title={selectedDocument.doc_no || selectedDocument.case_no}
-          subtitle={`${selectedDocument.requester_name} • ${selectedDocument.requested_amount.toLocaleString()} THB`}
-          actions={
-            <button
-              onClick={() => setSelectedCaseId(selectedDocument.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all ${
-                selectedCaseId === selectedDocument.id
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Upload size={14} />
-              {selectedCaseId === selectedDocument.id ? 'Ready to Upload' : 'Use for Upload'}
-            </button>
-          }
-          className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-xl"
-          bodyClassName="flex h-[420px] items-center justify-center bg-slate-100 p-6"
-          emptyState={
-            <div className="max-w-md text-center text-slate-500">
-              <FileText size={48} className="mx-auto mb-4 opacity-30" />
-              <p className="font-semibold text-slate-700">ยังไม่มีไฟล์ PS สำหรับรายการนี้</p>
-              <p className="mt-2 text-sm">คุณยังสามารถใช้ส่วน Upload ด้านบนเพื่อแนบไฟล์ใหม่ได้</p>
-            </div>
-          }
-        />
-      )}
-
       {/* Document Table */}
       <div className="bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden min-h-[500px]">
         <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
@@ -314,9 +280,9 @@ export const DocumentManager: React.FC = () => {
                 documents.map((doc) => (
                   <tr
                     key={doc.id}
-                    onClick={() => setSelectedDocument(doc)}
+                    onClick={() => setSelectedCaseId(doc.id)}
                     className={`cursor-pointer transition-all group hover:bg-slate-50/80 ${
-                      selectedDocument?.id === doc.id
+                      selectedCaseId === doc.id
                         ? 'bg-blue-50/60 ring-1 ring-inset ring-blue-100'
                         : !doc.is_receipt_uploaded
                           ? 'bg-red-50/30'
@@ -356,7 +322,6 @@ export const DocumentManager: React.FC = () => {
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedCaseId(doc.id);
-                          setSelectedDocument(doc);
                         }}
                         className={`flex items-center gap-2 px-5 py-2 rounded-xl font-black text-xs transition-all ${
                           selectedCaseId === doc.id 
