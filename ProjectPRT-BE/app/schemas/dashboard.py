@@ -19,10 +19,12 @@ class ActivityData(BaseModel):
 
 class TransactionItem(BaseModel):
     id: str
+    case_id: str
     initial: str
     name: str
     description: str
     amount: float
+    has_attachment: bool = False
     receipt_url: Optional[str] = None
 
 class DashboardData(BaseModel):

@@ -9,7 +9,8 @@ from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, RO
 from app.models import (
     Document, DocumentType, 
     Case, CaseStatus, 
-    Category, CategoryType, 
+    Category, CategoryType,
+    Attachment,
     User
 )
 from app.schemas.common import make_success_response
@@ -154,7 +155,17 @@ async def get_full_dashboard(
         .limit(5)
     )
     latest_docs = db.execute(stmt_latest).all()
-    
+
+    case_ids = [case_obj.id for _, case_obj, _, _ in latest_docs]
+    attachment_case_ids = set()
+    if case_ids:
+        attachment_case_ids = {
+            case_id for (case_id,) in db.query(Attachment.case_id)
+            .filter(Attachment.case_id.in_(case_ids))
+            .distinct()
+            .all()
+        }
+
     tx_list = []
     for row in latest_docs:
         doc = row.Document
@@ -169,10 +180,12 @@ async def get_full_dashboard(
 
         tx_list.append(TransactionItem(
             id=str(doc.id),
+            case_id=str(case_obj.id),
             initial=initial,
             name=f"{cat_name} ({requester_name})", # แสดงชื่อหมวดหมู่ + ชื่อคนเบิก
             description=doc.doc_no,                # แสดงเลขที่เอกสาร PV-xxxx
             amount=float(doc.amount),
+            has_attachment=case_obj.id in attachment_case_ids,
             date=doc.created_at.strftime("%Y-%m-%d") # เพิ่มวันที่ถ้า Frontend รองรับ
         ))
 

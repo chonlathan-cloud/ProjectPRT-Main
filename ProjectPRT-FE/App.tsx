@@ -20,11 +20,10 @@ const App: React.FC = () => {
   const [isSigningUp, setIsSigningUp] = useState(false);
 
   useEffect(() => {
-    // Check local storage for theme preference or system preference
+    // Default to light mode unless the user explicitly saved dark mode.
     const savedTheme = localStorage.getItem('theme');
-    const prefersDark = globalThis.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+
+    if (savedTheme === 'dark') {
       setIsDarkMode(true);
     }
   }, []);

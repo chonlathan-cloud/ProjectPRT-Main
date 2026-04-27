@@ -10,6 +10,17 @@
         darkMode: "class",
       };
     </script>
+    <script>
+      (() => {
+        try {
+          const isDarkMode = localStorage.getItem('theme') === 'dark';
+          document.documentElement.classList.toggle('dark', isDarkMode);
+          document.documentElement.style.colorScheme = isDarkMode ? 'dark' : 'light';
+        } catch (error) {
+          console.error('Failed to initialize theme', error);
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -34,7 +45,6 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="/index.css" />
   </head>
   <body>
     <div id="root"></div>

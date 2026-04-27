@@ -45,6 +45,7 @@ class AttachmentType(enum.Enum):
     QUOTE = "QUOTE"
     RECEIPT = "RECEIPT"
     PS = "PS"
+    SIGNATURE = "SIGNATURE"
     OTHER = "OTHER"
 
 # --- Models ---
@@ -89,6 +90,8 @@ class Case(Base):
     is_receipt_uploaded = Column(Boolean, default=False, nullable=False) # สำหรับ PV (check ใบเสร็จ)
     reject_reason = Column(Text, nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(String, nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
 
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

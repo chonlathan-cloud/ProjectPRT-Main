@@ -107,33 +107,27 @@ async def get_full_dashboard(
         .order_by(desc(Document.created_at))\
         .limit(5).all()
 
-    # ... (ส่วน Loop latest_transactions เหมือนเดิม) ...
     case_ids = [case.id for _, case, _ in latest_docs]
-    receipt_map = {}
+    attachment_case_ids = set()
     if case_ids:
-        receipt_rows = db.query(Attachment.case_id, Attachment.gcs_uri, Attachment.uploaded_at)\
-            .filter(
-                Attachment.type == AttachmentType.RECEIPT,
-                Attachment.case_id.in_(case_ids)
-            )\
-            .order_by(Attachment.case_id, desc(Attachment.uploaded_at))\
+        attachment_case_ids = {
+            case_id for (case_id,) in db.query(Attachment.case_id)
+            .filter(Attachment.case_id.in_(case_ids))
+            .distinct()
             .all()
-        for case_id, gcs_uri, _uploaded_at in receipt_rows:
-            if case_id not in receipt_map:
-                receipt_map[case_id] = gcs_uri
+        }
 
     latest_transactions = []
     for doc, case, cat in latest_docs:
         initial_char = "P" if doc.doc_type == DocumentType.PV else "R"
-        gcs_uri = receipt_map.get(case.id)
-        receipt_url = gcs.generate_download_url(gcs_uri) if gcs_uri else None
         latest_transactions.append(TransactionItem(
             id=str(doc.id),
+            case_id=str(case.id),
             initial=initial_char, 
             name=cat.name_th,
             description=f"{doc.doc_no} - {case.purpose}",
             amount=float(doc.amount),
-            receipt_url=receipt_url
+            has_attachment=case.id in attachment_case_ids
         ))
 
     return make_success_response({

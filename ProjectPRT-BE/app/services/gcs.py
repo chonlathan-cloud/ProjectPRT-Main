@@ -1,4 +1,5 @@
 from datetime import timedelta
+from functools import lru_cache
 import logging
 
 from google.auth import default as google_auth_default
@@ -11,6 +12,7 @@ from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
+@lru_cache(maxsize=1)
 def _get_storage_client():
     # Prefer explicit service account JSON; fallback to default credentials (Cloud Run).
     credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
@@ -25,6 +27,7 @@ def _get_storage_client():
     return storage.Client(project=settings.GOOGLE_CLOUD_PROJECT)
 
 
+@lru_cache(maxsize=1)
 def _get_signing_credentials():
     credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
     if credentials_path:
@@ -88,6 +91,22 @@ def generate_signed_download_url(object_name: str) -> str:
     return url
 
 
+def get_blob_content_type(object_name: str) -> str | None:
+    client = _get_storage_client()
+    bucket = client.bucket(settings.GCS_BUCKET_NAME)
+
+    try:
+        blob = bucket.get_blob(object_name)
+    except Exception as exc:
+        logger.warning("Failed to fetch blob metadata for %s: %s", object_name, exc)
+        return None
+
+    if not blob:
+        return None
+
+    return blob.content_type
+
+
 def generate_download_url(object_name: str) -> str:
     client = _get_storage_client()
     bucket = client.bucket(settings.GCS_BUCKET_NAME)
@@ -128,3 +147,10 @@ def upload_bytes(
         except Exception as exc:
             logger.warning("Failed to make object public: %s", exc)
     return f"gs://{settings.GCS_BUCKET_NAME}/{object_name}"
+
+
+def download_bytes(object_name: str) -> bytes:
+    client = _get_storage_client()
+    bucket = client.bucket(settings.GCS_BUCKET_NAME)
+    blob = bucket.blob(object_name)
+    return blob.download_as_bytes()
