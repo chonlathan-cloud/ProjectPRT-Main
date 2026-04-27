@@ -43,10 +43,12 @@ export interface DashboardData {
   activityStats: Array<{ name: string; value: number; fill: string }>;
   latestTransactions: Array<{
     id: string;
+    case_id: string;
     initial: string;
     name: string;
     description: string;
     amount: number;
+    has_attachment?: boolean;
     receipt_url?: string;
   }>;
 }

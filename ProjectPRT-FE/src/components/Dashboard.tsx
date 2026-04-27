@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MoreHorizontal, Wallet, TrendingUp, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, FileText, ExternalLink } from 'lucide-react';
-import  { getDashboardData, DashboardData} from '../services/api';
+import { Search, MoreHorizontal, Wallet, TrendingUp, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, FileText, Loader2 } from 'lucide-react';
+import  { getDashboardData, DashboardData, getCaseAttachments } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -29,6 +29,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
   // State for data - initialized with empty structure
   const [data, setData] = useState<DashboardData>(INITIAL_DATA);
   const [loading, setLoading] = useState<boolean>(false);
+  const [attachmentLoadingId, setAttachmentLoadingId] = useState<string | null>(null);
+  const [attachmentUrlByTransactionId, setAttachmentUrlByTransactionId] = useState<Record<string, string | null>>({});
+  const [attachmentErrorByTransactionId, setAttachmentErrorByTransactionId] = useState<Record<string, string>>({});
   
   // State for UI interaction
   const [activeCard, setActiveCard] = useState<'expenses' | 'income' | 'balance' | null>(null);
@@ -57,12 +60,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
   useEffect(() => {
     const nextSelectedTransaction =
       data.latestTransactions.find((item) => item.id === selectedTransaction?.id) ||
-      data.latestTransactions.find((item) => item.receipt_url) ||
+      data.latestTransactions.find((item) => item.has_attachment) ||
       data.latestTransactions[0] ||
       null;
 
     setSelectedTransaction(nextSelectedTransaction);
   }, [data.latestTransactions, selectedTransaction?.id]);
+
+  useEffect(() => {
+    setAttachmentLoadingId(null);
+    setAttachmentUrlByTransactionId({});
+    setAttachmentErrorByTransactionId({});
+  }, [selectedYear]);
 
   const handlePrevYear = () => {
     setSelectedYear(prev => prev - 1);
@@ -71,6 +80,75 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
   const handleNextYear = () => {
     setSelectedYear(prev => prev + 1);
   };
+
+  const openAttachment = (url: string) => {
+    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!newWindow) {
+      window.location.href = url;
+    }
+  };
+
+  const resolveTransactionAttachment = async (transaction: DashboardTransaction) => {
+    setAttachmentLoadingId(transaction.id);
+    setAttachmentErrorByTransactionId((prev) => {
+      const next = { ...prev };
+      delete next[transaction.id];
+      return next;
+    });
+
+    try {
+      const attachments = await getCaseAttachments(transaction.case_id);
+      const preferredAttachment =
+        attachments.find((attachment) => attachment.type === 'RECEIPT') ||
+        attachments[0] ||
+        null;
+
+      if (!preferredAttachment) {
+        setAttachmentUrlByTransactionId((prev) => ({ ...prev, [transaction.id]: null }));
+        setAttachmentErrorByTransactionId((prev) => ({ ...prev, [transaction.id]: 'รายการนี้ยังไม่มีไฟล์แนบ' }));
+        return null;
+      }
+
+      setAttachmentUrlByTransactionId((prev) => ({ ...prev, [transaction.id]: preferredAttachment.url }));
+      return preferredAttachment.url;
+    } catch (error) {
+      console.error('Failed to load dashboard attachment:', error);
+      setAttachmentUrlByTransactionId((prev) => ({ ...prev, [transaction.id]: null }));
+      setAttachmentErrorByTransactionId((prev) => ({ ...prev, [transaction.id]: 'ไม่สามารถโหลดเอกสารได้' }));
+      return null;
+    } finally {
+      setAttachmentLoadingId(null);
+    }
+  };
+
+  const handleViewFile = async (transaction: DashboardTransaction) => {
+    setSelectedTransaction(transaction);
+
+    const cachedUrl = attachmentUrlByTransactionId[transaction.id];
+    if (cachedUrl) {
+      openAttachment(cachedUrl);
+      return;
+    }
+
+    const resolvedUrl = await resolveTransactionAttachment(transaction);
+    if (resolvedUrl) {
+      openAttachment(resolvedUrl);
+    }
+  };
+
+  const handleLoadPreview = async (transaction: DashboardTransaction) => {
+    setSelectedTransaction(transaction);
+
+    if (attachmentUrlByTransactionId[transaction.id]) {
+      return;
+    }
+
+    await resolveTransactionAttachment(transaction);
+  };
+
+  const selectedAttachmentUrl = selectedTransaction ? attachmentUrlByTransactionId[selectedTransaction.id] ?? null : null;
+  const selectedAttachmentError = selectedTransaction ? attachmentErrorByTransactionId[selectedTransaction.id] ?? null : null;
+  const isSelectedAttachmentLoading = selectedTransaction ? attachmentLoadingId === selectedTransaction.id : false;
 
   // Helper to determine card styling
   const getCardStyle = (cardType: 'expenses' | 'income' | 'balance') => {
@@ -288,18 +366,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
                   <span className="text-lg font-bold text-slate-800 dark:text-white">
                     {item.amount.toLocaleString()} <span className="text-sm font-medium text-slate-400">บาท</span>
                   </span>
-                  {item.receipt_url ? (
-                    <a
-                      href={item.receipt_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
+                  {item.has_attachment ? (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      disabled={attachmentLoadingId === item.id}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await handleViewFile(item);
+                      }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-100/50 dark:border-blue-800/50"
                     >
-                      <FileText size={14} />
-                      View File
-                      <ExternalLink size={12} className="opacity-50" />
-                    </a>
+                      {attachmentLoadingId === item.id ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <FileText size={14} />
+                          View File
+                        </>
+                      )}
+                    </button>
                   ) : (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 rounded-lg text-xs font-medium border border-slate-100 dark:border-slate-800">
                       <FileText size={14} className="opacity-50" />
@@ -318,16 +408,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
 
         {selectedTransaction && (
           <AttachmentPreviewPanel
-            url={selectedTransaction.receipt_url}
+            url={selectedAttachmentUrl}
             title={selectedTransaction.name}
             subtitle={selectedTransaction.description}
+            actions={selectedTransaction.has_attachment ? (
+              <button
+                type="button"
+                onClick={() => handleLoadPreview(selectedTransaction)}
+                disabled={isSelectedAttachmentLoading}
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                {isSelectedAttachmentLoading ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Loading Preview
+                  </>
+                ) : selectedAttachmentUrl ? (
+                  'Preview Ready'
+                ) : (
+                  'Load Preview'
+                )}
+              </button>
+            ) : undefined}
             className="mt-8 overflow-hidden rounded-3xl border border-slate-100 bg-slate-50/70 shadow-sm dark:border-slate-800 dark:bg-slate-950/60"
             bodyClassName="flex h-[360px] items-center justify-center bg-slate-100 p-6 dark:bg-slate-950"
             emptyState={
               <div className="max-w-md text-center text-slate-500 dark:text-slate-400">
                 <FileText size={48} className="mx-auto mb-4 opacity-30" />
-                <p className="font-semibold text-slate-700 dark:text-slate-200">รายการนี้ยังไม่มีไฟล์แนบ</p>
-                <p className="mt-2 text-sm">หากมีไฟล์แล้ว ระบบจะแสดง preview ในส่วนนี้อัตโนมัติ</p>
+                <p className="font-semibold text-slate-700 dark:text-slate-200">
+                  {selectedTransaction.has_attachment ? 'กด Load Preview เพื่อดึงเอกสารล่าสุด' : 'รายการนี้ยังไม่มีไฟล์แนบ'}
+                </p>
+                <p className="mt-2 text-sm">
+                  {selectedAttachmentError || (selectedTransaction.has_attachment
+                    ? 'ระบบจะขอ signed URL เฉพาะตอนที่คุณต้องการดูไฟล์'
+                    : 'หากมีไฟล์แล้ว ระบบจะแสดง preview ในส่วนนี้ได้')}
+                </p>
               </div>
             }
           />
