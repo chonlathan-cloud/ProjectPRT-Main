@@ -71,6 +71,14 @@ export interface InsightsData {
   }>;
 }
 
+export interface CaseAttachmentFile {
+  id: string;
+  case_id: string;
+  file_name: string;
+  url: string;
+  type: 'QUOTE' | 'RECEIPT' | 'PS' | 'SIGNATURE' | 'OTHER';
+}
+
 export interface ProfitLossEntry {
   label: string;
   value: number;
@@ -304,6 +312,12 @@ export const getInsights = async (requesterId?: string, month?: number, year?: n
   const response = await api.get(`/insights/?${params.toString()}`);
   return response.data.data;
 };
+
+export const getCaseAttachments = async (caseId: string): Promise<CaseAttachmentFile[]> => {
+  const response = await api.get(`/files/${caseId}/list`);
+  return Array.isArray(response.data) ? response.data : (response.data.data || []);
+};
+
 // Search Documents by Doc No (for JV Consolidation)
 export const searchDocumentsByNo = async (docNo: string): Promise<AdminCaseView[]> => {
   const response = await api.get(`/cases/search-by-doc?doc_no=${encodeURIComponent(docNo)}`);

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Filter, MoreHorizontal, TrendingUp } from 'lucide-react';
-import { getUsers, getInsights, getCategories, InsightsData } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Filter, MoreHorizontal, TrendingUp, ChevronDown, Loader2 } from 'lucide-react';
+import { getUsers, getInsights, getCategories, getCaseAttachments, InsightsData, CaseAttachmentFile } from '../services/api';
 import { User, Category } from '../../types';
 
 const MONTHS = [
@@ -10,6 +10,13 @@ const MONTHS = [
 // 1. เพิ่มตัวแปร YEAR และ Helper
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2];
+const ATTACHMENT_TYPE_LABELS: Record<CaseAttachmentFile['type'], string> = {
+  QUOTE: 'ใบเสนอราคา',
+  RECEIPT: 'ใบเสร็จ',
+  PS: 'ใบ ปส',
+  SIGNATURE: 'ลายเซ็น',
+  OTHER: 'เอกสารอื่น',
+};
 
 const INITIAL_INSIGHTS: InsightsData = {
   summary: {
@@ -33,6 +40,11 @@ export const Insights: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<number>(CURRENT_YEAR);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [activeAttachmentCaseId, setActiveAttachmentCaseId] = useState<string | null>(null);
+  const [attachmentLoadingCaseId, setAttachmentLoadingCaseId] = useState<string | null>(null);
+  const [attachmentsByCaseId, setAttachmentsByCaseId] = useState<Record<string, CaseAttachmentFile[]>>({});
+  const [attachmentMessageByCaseId, setAttachmentMessageByCaseId] = useState<Record<string, string>>({});
+  const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const fetchOtherData = async () => {
@@ -70,6 +82,32 @@ export const Insights: React.FC = () => {
     fetchInsightsData();
   }, [selectedUserId, selectedMonth, selectedYear, selectedCategoryId]); // Dependency เปลี่ยน
 
+  useEffect(() => {
+    if (!activeAttachmentCaseId) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) {
+        setActiveAttachmentCaseId(null);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActiveAttachmentCaseId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [activeAttachmentCaseId]);
+
   const getCreatorName = (requesterId: string) => {
     const user = users.find(u => u.requester_id === requesterId);
     return user ? user.name : 'Unknown User';
@@ -77,6 +115,54 @@ export const Insights: React.FC = () => {
 
   const formatCurrency = (amount: number) => {
     return `${amount.toLocaleString()} THB`;
+  };
+
+  const getAttachmentFileName = (fileName: string) => fileName.replace(/^\d{14}_/, '');
+
+  const openAttachment = (url: string) => {
+    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!newWindow) {
+      window.location.href = url;
+    }
+  };
+
+  const handleDocumentClick = async (caseId: string) => {
+    const isCurrentMenuOpen =
+      activeAttachmentCaseId === caseId && (attachmentsByCaseId[caseId]?.length ?? 0) > 1;
+
+    if (isCurrentMenuOpen) {
+      setActiveAttachmentCaseId(null);
+      return;
+    }
+
+    setAttachmentLoadingCaseId(caseId);
+    setActiveAttachmentCaseId(caseId);
+    setAttachmentMessageByCaseId((prev) => {
+      const next = { ...prev };
+      delete next[caseId];
+      return next;
+    });
+
+    try {
+      const attachments = await getCaseAttachments(caseId);
+      setAttachmentsByCaseId((prev) => ({ ...prev, [caseId]: attachments }));
+
+      if (attachments.length === 0) {
+        setAttachmentMessageByCaseId((prev) => ({ ...prev, [caseId]: 'ไม่มีเอกสาร' }));
+        return;
+      }
+
+      if (attachments.length === 1) {
+        setActiveAttachmentCaseId(null);
+        openAttachment(attachments[0].url);
+      }
+    } catch (error) {
+      console.error('Failed to load case attachments:', error);
+      setAttachmentsByCaseId((prev) => ({ ...prev, [caseId]: [] }));
+      setAttachmentMessageByCaseId((prev) => ({ ...prev, [caseId]: 'ไม่สามารถโหลดเอกสารได้' }));
+    } finally {
+      setAttachmentLoadingCaseId(null);
+    }
   };
 
   return (
@@ -250,7 +336,64 @@ export const Insights: React.FC = () => {
                 insights.transactions.map((item) => (
                   <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
                     <td className="px-6 py-4">
-                      <span className="text-sm font-bold text-slate-700">{item.doc_no}</span>
+                      <div className="relative inline-flex flex-col gap-2" ref={activeAttachmentCaseId === item.id ? attachmentMenuRef : null}>
+                        <button
+                          type="button"
+                          onClick={() => handleDocumentClick(item.id)}
+                          disabled={attachmentLoadingCaseId === item.id || item.doc_no === '-'}
+                          className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 hover:text-blue-900 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        >
+                          <span>{item.doc_no}</span>
+                          {attachmentLoadingCaseId === item.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : item.doc_no !== '-' ? (
+                            <ChevronDown size={14} className={activeAttachmentCaseId === item.id ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                          ) : null}
+                        </button>
+
+                        {activeAttachmentCaseId === item.id && (
+                          <>
+                            {attachmentMessageByCaseId[item.id] && (
+                              <div className="absolute top-full left-0 z-20 mt-1 min-w-48 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 shadow-lg">
+                                {attachmentMessageByCaseId[item.id]}
+                              </div>
+                            )}
+
+                            {(attachmentsByCaseId[item.id]?.length ?? 0) > 1 && (
+                              <div className="absolute top-full left-0 z-20 mt-1 min-w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                                <div className="border-b border-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                                  เลือกเอกสาร
+                                </div>
+                                <div className="max-h-64 overflow-y-auto py-1">
+                                  {attachmentsByCaseId[item.id].map((attachment) => (
+                                    <button
+                                      key={attachment.id}
+                                      type="button"
+                                      onClick={() => {
+                                        openAttachment(attachment.url);
+                                        setActiveAttachmentCaseId(null);
+                                      }}
+                                      className="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-slate-50"
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-black text-blue-600">
+                                          {ATTACHMENT_TYPE_LABELS[attachment.type] || attachment.type}
+                                        </p>
+                                        <p className="truncate text-sm font-medium text-slate-700">
+                                          {getAttachmentFileName(attachment.file_name)}
+                                        </p>
+                                      </div>
+                                      <span className="shrink-0 text-xs font-semibold text-slate-400">
+                                        เปิด
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 font-bold">{item.date}</td>
                     <td className="px-6 py-4">
