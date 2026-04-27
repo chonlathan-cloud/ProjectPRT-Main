@@ -1,4 +1,5 @@
 from datetime import timedelta
+from functools import lru_cache
 import logging
 
 from google.auth import default as google_auth_default
@@ -11,6 +12,7 @@ from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
+@lru_cache(maxsize=1)
 def _get_storage_client():
     # Prefer explicit service account JSON; fallback to default credentials (Cloud Run).
     credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
@@ -25,6 +27,7 @@ def _get_storage_client():
     return storage.Client(project=settings.GOOGLE_CLOUD_PROJECT)
 
 
+@lru_cache(maxsize=1)
 def _get_signing_credentials():
     credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
     if credentials_path:
