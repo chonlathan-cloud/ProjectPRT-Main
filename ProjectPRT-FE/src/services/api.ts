@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Category, CasePayload, CaseResponse, User, BankAccount, AdminCaseView, SignaturePlacement } from '../../types';
+import { Category, CasePayload, CaseResponse, User, BankAccount, AdminCaseView } from '../../types';
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 const API_BASE_URL = `${BASE_URL}/api/v1`;
 // --- CONFIGURATION ---
@@ -17,8 +17,6 @@ export interface WorkflowResponse {
   audit_details?: {
     approved_by?: string;
     approved_at?: string;
-    signature_attachment_id?: string;
-    signature_url?: string;
     approved_pdf_url?: string;
   };
 }
@@ -237,14 +235,9 @@ export const getCasesPage = async (params?: {
 };
 // สั่งอนุมัติ Case
 export const approveCase = async (
-  caseId: string,
-  signatureBase64: string,
-  signaturePosition?: SignaturePlacement
+  caseId: string
 ): Promise<WorkflowResponse> => {
-  const response = await api.post(`/cases/${caseId}/approve`, {
-    signature_base64: signatureBase64,
-    signature_position: signaturePosition,
-  });
+  const response = await api.post(`/cases/${caseId}/approve`);
   return response.data;
 };
 // [NEW] เพิ่มฟังก์ชันสำหรับ Reject/Cancel

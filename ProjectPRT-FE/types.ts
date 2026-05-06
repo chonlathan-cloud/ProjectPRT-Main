@@ -87,9 +87,3 @@ export interface AdminCaseView {
   ps_url?: string | null;
   mime_type?: string | null;
 }
-
-export interface SignaturePlacement {
-  x: number;
-  y: number;
-  width: number;
-}
