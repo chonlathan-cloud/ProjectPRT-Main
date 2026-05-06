@@ -12,9 +12,11 @@ import  AdminApproval  from './src/components/AdminApproval';
 import { ProfitLoss } from './src/components/ProfitLoss';
 import { DocumentManager } from './src/components/DocumentManager';
 import { UserManager } from './src/components/UserManager';
+import { DocumentPreviewPage } from './src/components/DocumentPreviewPage';
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const previewId = new URLSearchParams(window.location.search).get('documentPreview');
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(localStorage.getItem('token')));
   const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
@@ -86,6 +88,10 @@ const App: React.FC = () => {
         onSwitchToSignUp={() => setIsSigningUp(true)} 
       />
     );
+  }
+
+  if (previewId) {
+    return <DocumentPreviewPage previewId={previewId} />;
   }
 
   return (

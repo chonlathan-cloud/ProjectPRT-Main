@@ -3,6 +3,7 @@ import { ExternalLink, FileText, Image as ImageIcon } from 'lucide-react';
 
 import AttachmentPreviewContent from './AttachmentPreviewContent';
 import { getAttachmentPreviewKind } from '../utils/attachmentPreview';
+import { openDocumentPreview } from '../utils/documentPreview';
 
 interface AttachmentPreviewPanelProps {
   url?: string | null;
@@ -15,6 +16,7 @@ interface AttachmentPreviewPanelProps {
   overlayContent?: React.ReactNode;
   className?: string;
   bodyClassName?: string;
+  showOpenButton?: boolean;
 }
 
 const getPreviewBadge = (url?: string | null, mimeType?: string | null) => {
@@ -58,6 +60,7 @@ export const AttachmentPreviewPanel: React.FC<AttachmentPreviewPanelProps> = ({
   overlayContent,
   className = 'overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900',
   bodyClassName = 'h-[600px] bg-slate-100 p-6 dark:bg-slate-950 overflow-y-auto',
+  showOpenButton = true,
 }) => {
   const badge = getPreviewBadge(url, mimeType);
   const BadgeIcon = badge.icon;
@@ -76,16 +79,15 @@ export const AttachmentPreviewPanel: React.FC<AttachmentPreviewPanelProps> = ({
             {badge.label}
           </div>
           {actions}
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
+          {showOpenButton && url && (
+            <button
+              type="button"
+              onClick={() => openDocumentPreview({ url, title, mimeType, subtitle })}
               className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
             >
               <ExternalLink size={14} />
-              Open Original
-            </a>
+              เปิดเอกสาร
+            </button>
           )}
         </div>
       </div>

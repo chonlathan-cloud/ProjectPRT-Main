@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { AdminCaseView } from '../../types';
 import { approveCase, getCases, rejectCase } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
+import { openDocumentPreview } from '../utils/documentPreview';
 import {
   AlertCircle,
   Briefcase,
@@ -139,6 +140,7 @@ export const AdminApproval: React.FC = () => {
         const nextApprovedCase: ApprovedCaseView = {
           ...caseToApprove,
           doc_no: response.doc_no || caseToApprove.doc_no,
+          approved_pdf_url: approvedPdfUrl,
           approvedPdfUrl,
         };
 
@@ -157,6 +159,7 @@ export const AdminApproval: React.FC = () => {
         const updatedSelectedCase: AdminCaseView = {
           ...caseToApprove,
           doc_no: response.doc_no || caseToApprove.doc_no,
+          approved_pdf_url: approvedPdfUrl,
         };
         setSelectedCase(updatedSelectedCase);
         setApprovedPreview({
@@ -236,10 +239,10 @@ export const AdminApproval: React.FC = () => {
   );
   const previewUrl = isShowingApprovedPreview
     ? approvedPreview?.url ?? null
-    : selectedCase?.ps_url ?? null;
+    : selectedCase?.approved_pdf_url ?? selectedCase?.ps_url ?? null;
   const previewMimeType = isShowingApprovedPreview
     ? 'application/pdf'
-    : selectedCase?.mime_type;
+    : selectedCase?.approved_pdf_url ? 'application/pdf' : selectedCase?.mime_type;
   const previewTitle = isShowingApprovedPreview
     ? approvedPreview?.docNo || selectedCase?.doc_no || selectedCase?.case_no
     : selectedCase?.doc_no || selectedCase?.case_no;
@@ -423,15 +426,18 @@ export const AdminApproval: React.FC = () => {
                     : 'พร้อม Approved PDF'}
                 </p>
               </div>
-              <a
-                href={latestApprovedPdfUrl}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                onClick={() => openDocumentPreview({
+                  url: latestApprovedPdfUrl,
+                  title: latestApprovedDocNo || 'Approved PDF',
+                  mimeType: 'application/pdf',
+                })}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700"
               >
                 <ExternalLink size={16} />
                 เปิดเอกสารที่อนุมัติแล้ว
-              </a>
+              </button>
             </div>
           </div>
         )}
@@ -574,15 +580,19 @@ export const AdminApproval: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-3">
                             {item.approvedPdfUrl && (
-                              <a
-                                href={item.approvedPdfUrl}
-                                target="_blank"
-                                rel="noreferrer"
+                              <button
+                                type="button"
+                                onClick={() => openDocumentPreview({
+                                  url: item.approvedPdfUrl!,
+                                  title: item.doc_no || item.case_no,
+                                  mimeType: 'application/pdf',
+                                  subtitle: item.requester_name,
+                                })}
                                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-2.5 py-1 text-[10px] font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
                               >
                                 <ExternalLink size={12} />
                                 เปิด PDF
-                              </a>
+                              </button>
                             )}
                             <span className="text-xs font-bold text-emerald-600">
                               {item.requested_amount.toLocaleString()}

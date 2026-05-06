@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
+from app.core.settings import settings
 from app.db import get_db
 from app.deps import get_current_user, UserInDB
-from app.models import Case, Attachment, AttachmentType, CaseStatus
+from app.models import Case, Document, Attachment, AttachmentType, CaseStatus
 from app.services import gcs
 from app.schemas.files import FileUploadResponse, SignedUrlResponse
 
@@ -17,6 +18,13 @@ router = APIRouter(
     prefix="/api/v1/files",
     tags=["Files"]
 )
+
+
+def _get_gcs_object_name(gcs_uri: str | None) -> str | None:
+    if not gcs_uri or gcs_uri.startswith("pending-"):
+        return None
+
+    return gcs_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
@@ -74,7 +82,7 @@ async def upload_file(
         case_id=case_id,
         file_name=file.filename,
         url=public_url,
-        type=attachment_type
+        type=attachment_type.value
     )
 
 @router.get("/{case_id}/list", response_model=list[FileUploadResponse])
@@ -85,13 +93,27 @@ async def list_files(
 ):
     # Validate Case access rights here if strictly needed
     attachments = db.execute(select(Attachment).filter_by(case_id=case_id)).scalars().all()
-    
-    return [
+
+    files: list[FileUploadResponse] = []
+    doc = db.execute(select(Document).filter_by(case_id=case_id)).scalar_one_or_none()
+    document_object_name = _get_gcs_object_name(doc.pdf_uri if doc else None)
+    if doc and document_object_name:
+        files.append(FileUploadResponse(
+            id=doc.id,
+            case_id=case_id,
+            file_name=f"{doc.doc_no}_approved.pdf",
+            url=gcs.generate_download_url(document_object_name),
+            type="APPROVED_PDF",
+        ))
+
+    files.extend([
         FileUploadResponse(
             id=a.id,
             case_id=a.case_id,
             file_name=a.gcs_uri.split('/')[-1],
             url=gcs.generate_download_url(a.gcs_uri),
-            type=a.type
+            type=a.type.value
         ) for a in attachments
-    ]
+    ])
+
+    return files

@@ -85,5 +85,6 @@ export interface AdminCaseView {
   department?: string;
   is_receipt_uploaded: boolean;
   ps_url?: string | null;
+  approved_pdf_url?: string | null;
   mime_type?: string | null;
 }

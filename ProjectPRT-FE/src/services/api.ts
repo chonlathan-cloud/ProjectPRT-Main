@@ -76,7 +76,7 @@ export interface CaseAttachmentFile {
   case_id: string;
   file_name: string;
   url: string;
-  type: 'QUOTE' | 'RECEIPT' | 'PS' | 'SIGNATURE' | 'OTHER';
+  type: 'QUOTE' | 'RECEIPT' | 'PS' | 'SIGNATURE' | 'OTHER' | 'APPROVED_PDF';
 }
 
 export interface ProfitLossEntry {

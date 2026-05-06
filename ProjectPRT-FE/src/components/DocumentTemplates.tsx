@@ -31,6 +31,15 @@ export interface DocumentData {
   }>;
 }
 
+const DocumentNumber = ({ label, value }: { label: string; value: string }) => (
+  <div className="absolute top-12 right-12 flex items-end gap-2">
+    <span>{label} :</span>
+    <span className="min-w-[140px] border-b border-black border-dotted px-2 pb-1 text-center font-bold">
+      {value || '-'}
+    </span>
+  </div>
+);
+
 
 
 export const PaymentVoucherTemplate = forwardRef<HTMLDivElement, { data: DocumentData }>(({ data }, ref) => {
@@ -63,12 +72,7 @@ export const PaymentVoucherTemplate = forwardRef<HTMLDivElement, { data: Documen
                 <h2 className="text-base font-bold">ใบเบิกเงิน (Payment Voucher)</h2>
               </div>
 
-              <div className="absolute top-12 right-12 flex items-center gap-2">
-                <span>เลขที่ PV :</span>
-                <div className="border border-black px-2 py-1 w-32 min-h-[28px] flex items-center justify-center">
-                  {data.docNo}
-                </div>
-              </div>
+              <DocumentNumber label="เลขที่ PV" value={data.docNo} />
 
               <div className="text-center mb-6">
                 <p>โรงเรียนพระปริยัติธรรมวัดธรรมมงคล แผนกสามัญศึกษา</p>
@@ -214,12 +218,7 @@ export const ReceiveVoucherTemplate = forwardRef<HTMLDivElement, { data: Documen
                 <h2 className="text-base font-bold">ใบรับเงิน (Receive Voucher)</h2>
               </div>
 
-              <div className="absolute top-12 right-12 flex items-center gap-2">
-                <span>เลขที่ RV :</span>
-                <div className="border border-black px-2 py-1 w-32 min-h-[28px] flex items-center justify-center">
-                  {data.docNo}
-                </div>
-              </div>
+              <DocumentNumber label="เลขที่ RV" value={data.docNo} />
 
               <div className="text-center mb-6">
                 <p>โรงเรียนพระปริยัติธรรมวัดธรรมมงคล แผนกสามัญศึกษา</p>
@@ -339,12 +338,7 @@ export const JournalVoucherTemplate = forwardRef<HTMLDivElement, { data: Documen
                 <h2 className="text-base font-bold">ใบสำคัญรายวันทั่วไป (Journal Voucher)</h2>
               </div>
 
-              <div className="absolute top-12 right-12 flex items-center gap-2">
-                <span>เลขที่ JV :</span>
-                <div className="border border-black px-2 py-1 w-32 min-h-[28px] flex items-center justify-center">
-                  {data.docNo}
-                </div>
-              </div>
+              <DocumentNumber label="เลขที่ JV" value={data.docNo} />
 
               <div className="text-center mb-6">
                 <p>โรงเรียนพระปริยัติธรรมวัดธรรมมงคล แผนกสามัญศึกษา</p>

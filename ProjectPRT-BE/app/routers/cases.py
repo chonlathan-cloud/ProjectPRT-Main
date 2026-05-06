@@ -9,6 +9,7 @@ from sqlalchemy import select, desc, func
 
 from app.services.doc_numbers import generate_document_no
 
+from app.core.settings import settings
 from app.db import get_db
 from app.deps import Role, has_role, get_current_user, UserInDB
 from app.models import (
@@ -47,6 +48,7 @@ class CaseAdminView(BaseModel):
     department: Optional[str] = None
     is_receipt_uploaded: bool
     ps_url: Optional[str] = None
+    approved_pdf_url: Optional[str] = None
     mime_type: Optional[str] = None
 
     class Config:
@@ -82,6 +84,18 @@ def _get_case_folder_name(db: Session, db_case: Case) -> str:
     if doc and doc.doc_no:
         return doc.doc_no
     return db_case.case_no
+
+
+def _get_gcs_object_name(gcs_uri: str | None) -> str | None:
+    if not gcs_uri or gcs_uri.startswith("pending-"):
+        return None
+
+    return gcs_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
+
+
+def _generate_document_pdf_url(gcs_uri: str | None) -> str | None:
+    object_name = _get_gcs_object_name(gcs_uri)
+    return gcs.generate_signed_download_url(object_name) if object_name else None
 
 
 def _can_see_all_cases(current_user: UserInDB) -> bool:
@@ -122,6 +136,7 @@ def _map_case_admin_results(db: Session, results: list) -> list[CaseAdminView]:
             department=row.department,
             is_receipt_uploaded=bool(row.is_receipt_uploaded),
             ps_url=gcs.generate_signed_download_url(ps_gcs_uri) if ps_gcs_uri else None,
+            approved_pdf_url=_generate_document_pdf_url(getattr(row, "pdf_uri", None)),
             mime_type=ps_mime_type
         ))
 
@@ -439,6 +454,7 @@ async def read_cases(
             Case.is_receipt_uploaded,
             Case.department_id.label("department"),
             Document.doc_no,
+            Document.pdf_uri,
             User.name.label("requester_name")
         )
         .outerjoin(Document, Case.id == Document.case_id)
@@ -492,6 +508,7 @@ async def read_cases_paged(
             Case.is_receipt_uploaded,
             Case.department_id.label("department"),
             Document.doc_no,
+            Document.pdf_uri,
             User.name.label("requester_name")
         )
         .outerjoin(Document, Case.id == Document.case_id)
@@ -550,6 +567,7 @@ async def search_cases(
             department=row.department_id,
             is_receipt_uploaded=bool(row.is_receipt_uploaded),
             ps_url=ps_url,
+            approved_pdf_url=_generate_document_pdf_url(doc.pdf_uri if doc else None),
             mime_type=ps_mime_type
         ))
     return mapped_results
@@ -584,6 +602,7 @@ async def search_cases_paged(
             Case.is_receipt_uploaded,
             Case.department_id.label("department"),
             Document.doc_no,
+            Document.pdf_uri,
             User.name.label("requester_name")
         )
         .join(Document, Case.id == Document.case_id)

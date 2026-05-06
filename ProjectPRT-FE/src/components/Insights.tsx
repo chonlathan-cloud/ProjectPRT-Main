@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Filter, MoreHorizontal, TrendingUp, ChevronDown, Loader2 } from 'lucide-react';
 import { getUsers, getInsights, getCategories, getCaseAttachments, InsightsData, CaseAttachmentFile } from '../services/api';
 import { User, Category } from '../../types';
+import { openDocumentPreview } from '../utils/documentPreview';
 
 const MONTHS = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -16,6 +17,7 @@ const ATTACHMENT_TYPE_LABELS: Record<CaseAttachmentFile['type'], string> = {
   PS: 'ใบ ปส',
   SIGNATURE: 'ลายเซ็น',
   OTHER: 'เอกสารอื่น',
+  APPROVED_PDF: 'เอกสารอนุมัติแล้ว',
 };
 
 const INITIAL_INSIGHTS: InsightsData = {
@@ -119,11 +121,13 @@ export const Insights: React.FC = () => {
 
   const getAttachmentFileName = (fileName: string) => fileName.replace(/^\d{14}_/, '');
 
-  const openAttachment = (url: string) => {
-    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!newWindow) {
-      window.location.href = url;
-    }
+  const openAttachment = (attachment: CaseAttachmentFile) => {
+    openDocumentPreview({
+      url: attachment.url,
+      title: getAttachmentFileName(attachment.file_name),
+      subtitle: ATTACHMENT_TYPE_LABELS[attachment.type] || attachment.type,
+      mimeType: attachment.type === 'APPROVED_PDF' ? 'application/pdf' : undefined,
+    });
   };
 
   const handleDocumentClick = async (caseId: string) => {
@@ -154,7 +158,7 @@ export const Insights: React.FC = () => {
 
       if (attachments.length === 1) {
         setActiveAttachmentCaseId(null);
-        openAttachment(attachments[0].url);
+        openAttachment(attachments[0]);
       }
     } catch (error) {
       console.error('Failed to load case attachments:', error);
@@ -370,7 +374,7 @@ export const Insights: React.FC = () => {
                                       key={attachment.id}
                                       type="button"
                                       onClick={() => {
-                                        openAttachment(attachment.url);
+                                        openAttachment(attachment);
                                         setActiveAttachmentCaseId(null);
                                       }}
                                       className="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-slate-50"

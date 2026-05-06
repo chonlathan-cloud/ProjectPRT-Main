@@ -1,5 +1,6 @@
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Lazy-import reportlab so app can start without the optional dependency installed.
 try:
@@ -7,12 +8,16 @@ try:
     from reportlab.lib.pagesizes import A4, letter
     from reportlab.lib.utils import ImageReader
     from reportlab.lib import colors
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
 except ImportError:  # pragma: no cover - defensive path for missing optional dependency
     canvas = None
     letter = None
     A4 = None
     ImageReader = None
     colors = None
+    pdfmetrics = None
+    TTFont = None
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -21,7 +26,15 @@ except ImportError:  # pragma: no cover - defensive path for missing optional de
     PdfWriter = None
 
 def _ensure_reportlab():
-    if canvas is None or letter is None or A4 is None or ImageReader is None or colors is None:
+    if (
+        canvas is None
+        or letter is None
+        or A4 is None
+        or ImageReader is None
+        or colors is None
+        or pdfmetrics is None
+        or TTFont is None
+    ):
         raise RuntimeError(
             "reportlab is required for PDF generation. Install with `pip install reportlab`."
         )
@@ -34,6 +47,56 @@ def _ensure_pdf_stamper():
         )
 def _format_datetime(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+THAI_MONTHS = [
+    "มกราคม",
+    "กุมภาพันธ์",
+    "มีนาคม",
+    "เมษายน",
+    "พฤษภาคม",
+    "มิถุนายน",
+    "กรกฎาคม",
+    "สิงหาคม",
+    "กันยายน",
+    "ตุลาคม",
+    "พฤศจิกายน",
+    "ธันวาคม",
+]
+THAI_APPROVAL_FONT_NAME = "ThaiApprovalFont"
+THAI_FONT_PATHS = [
+    Path("/usr/share/fonts/truetype/tlwg/Garuda.ttf"),
+    Path("/usr/share/fonts/truetype/tlwg/Loma.ttf"),
+    Path("/System/Library/Fonts/Supplemental/Ayuthaya.ttf"),
+    Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+]
+
+
+def _get_thai_approval_font_name() -> str:
+    registered_fonts = set(pdfmetrics.getRegisteredFontNames())
+    if THAI_APPROVAL_FONT_NAME in registered_fonts:
+        return THAI_APPROVAL_FONT_NAME
+
+    for font_path in THAI_FONT_PATHS:
+        if font_path.exists():
+            pdfmetrics.registerFont(TTFont(THAI_APPROVAL_FONT_NAME, str(font_path)))
+            return THAI_APPROVAL_FONT_NAME
+
+    raise RuntimeError(
+        "Thai font is required for PDF approval stamping. "
+        "Install fonts-thai-tlwg or provide a Thai TTF font."
+    )
+
+
+def _format_thai_approval_stamp(approved_by_name: str, approved_at: datetime) -> str:
+    thailand_time = approved_at.astimezone(timezone(timedelta(hours=7)))
+    thai_year = thailand_time.year + 543
+    thai_month = THAI_MONTHS[thailand_time.month - 1]
+    return (
+        f"อนุมัติแล้ว โดย {approved_by_name} "
+        f"วันที่ {thailand_time.day} {thai_month} {thai_year} "
+        f"เวลา {thailand_time.strftime('%H:%M:%S')} น."
+    )
 
 
 def generate_approved_document_pdf(
@@ -185,16 +248,13 @@ def stamp_text_approval_on_pdf(
     if approved_at.tzinfo is None:
         approved_at = approved_at.replace(tzinfo=timezone.utc)
 
-    thailand_time = approved_at.astimezone(timezone(timedelta(hours=7)))
-    stamp_text = (
-        f'{{approved by "{approved_by_name}" : '
-        f'[{thailand_time.strftime("%d/%m/%Y %H:%M:%S")}] Thailand}}'
-    )
+    stamp_text = _format_thai_approval_stamp(approved_by_name, approved_at)
+    stamp_font_name = _get_thai_approval_font_name()
 
     overlay_buffer = BytesIO()
     overlay_canvas = canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
     overlay_canvas.setFillColor(colors.HexColor("#475569"))
-    overlay_canvas.setFont("Helvetica", 9)
+    overlay_canvas.setFont(stamp_font_name, 10)
     overlay_canvas.drawRightString(
         page_width - 20,
         20,
