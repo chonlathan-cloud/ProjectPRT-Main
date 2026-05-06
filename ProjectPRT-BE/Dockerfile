@@ -11,6 +11,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    fonts-thai-tlwg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements และติดตั้ง

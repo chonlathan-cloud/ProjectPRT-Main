@@ -12,7 +12,7 @@ class FileUploadResponse(BaseModel):
     case_id: UUID
     file_name: str
     url: str
-    type: AttachmentType
+    type: str
 
 class SignedUrlPurpose(str, Enum):
     UPLOAD = "UPLOAD"

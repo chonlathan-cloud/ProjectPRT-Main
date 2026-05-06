@@ -1,9 +1,6 @@
-import logging
 from io import BytesIO
-from datetime import datetime
-from typing import Any
-
-from PIL import Image
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Lazy-import reportlab so app can start without the optional dependency installed.
 try:
@@ -11,12 +8,16 @@ try:
     from reportlab.lib.pagesizes import A4, letter
     from reportlab.lib.utils import ImageReader
     from reportlab.lib import colors
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
 except ImportError:  # pragma: no cover - defensive path for missing optional dependency
     canvas = None
     letter = None
     A4 = None
     ImageReader = None
     colors = None
+    pdfmetrics = None
+    TTFont = None
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -24,12 +25,16 @@ except ImportError:  # pragma: no cover - defensive path for missing optional de
     PdfReader = None
     PdfWriter = None
 
-
-logger = logging.getLogger(__name__)
-
-
 def _ensure_reportlab():
-    if canvas is None or letter is None or A4 is None or ImageReader is None or colors is None:
+    if (
+        canvas is None
+        or letter is None
+        or A4 is None
+        or ImageReader is None
+        or colors is None
+        or pdfmetrics is None
+        or TTFont is None
+    ):
         raise RuntimeError(
             "reportlab is required for PDF generation. Install with `pip install reportlab`."
         )
@@ -40,31 +45,58 @@ def _ensure_pdf_stamper():
         raise RuntimeError(
             "pypdf is required for stamping signed PDFs. Install with `pip install pypdf`."
         )
-
-
-def _clamp(value: float, min_value: float, max_value: float) -> float:
-    return max(min_value, min(max_value, value))
-
-
 def _format_datetime(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-# Source of truth for the owner approval slot on the real PS PDF page.
-# These are page-relative values, not FE preview-relative coordinates.
-FIXED_OWNER_SIGNATURE_X = 0.58
-FIXED_OWNER_SIGNATURE_TOP = 0.825
-FIXED_OWNER_SIGNATURE_WIDTH = 0.145
-FIXED_OWNER_TIMESTAMP_FONT_SIZE = 8
-FIXED_OWNER_TIMESTAMP_GAP = 8
+THAI_MONTHS = [
+    "มกราคม",
+    "กุมภาพันธ์",
+    "มีนาคม",
+    "เมษายน",
+    "พฤษภาคม",
+    "มิถุนายน",
+    "กรกฎาคม",
+    "สิงหาคม",
+    "กันยายน",
+    "ตุลาคม",
+    "พฤศจิกายน",
+    "ธันวาคม",
+]
+THAI_APPROVAL_FONT_NAME = "ThaiApprovalFont"
+THAI_FONT_PATHS = [
+    Path("/usr/share/fonts/truetype/tlwg/Garuda.ttf"),
+    Path("/usr/share/fonts/truetype/tlwg/Loma.ttf"),
+    Path("/System/Library/Fonts/Supplemental/Ayuthaya.ttf"),
+    Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+]
 
 
-def get_fixed_owner_signature_slot() -> dict[str, float]:
-    return {
-        "x": FIXED_OWNER_SIGNATURE_X,
-        "top": FIXED_OWNER_SIGNATURE_TOP,
-        "width": FIXED_OWNER_SIGNATURE_WIDTH,
-    }
+def _get_thai_approval_font_name() -> str:
+    registered_fonts = set(pdfmetrics.getRegisteredFontNames())
+    if THAI_APPROVAL_FONT_NAME in registered_fonts:
+        return THAI_APPROVAL_FONT_NAME
+
+    for font_path in THAI_FONT_PATHS:
+        if font_path.exists():
+            pdfmetrics.registerFont(TTFont(THAI_APPROVAL_FONT_NAME, str(font_path)))
+            return THAI_APPROVAL_FONT_NAME
+
+    raise RuntimeError(
+        "Thai font is required for PDF approval stamping. "
+        "Install fonts-thai-tlwg or provide a Thai TTF font."
+    )
+
+
+def _format_thai_approval_stamp(approved_by_name: str, approved_at: datetime) -> str:
+    thailand_time = approved_at.astimezone(timezone(timedelta(hours=7)))
+    thai_year = thailand_time.year + 543
+    thai_month = THAI_MONTHS[thailand_time.month - 1]
+    return (
+        f"อนุมัติแล้ว โดย {approved_by_name} "
+        f"วันที่ {thailand_time.day} {thai_month} {thai_year} "
+        f"เวลา {thailand_time.strftime('%H:%M:%S')} น."
+    )
 
 
 def generate_approved_document_pdf(
@@ -174,8 +206,8 @@ def generate_approved_document_pdf(
     signature_x = content_x + ((content_width - signature_width) * normalized_x)
     signature_y = content_y + ((content_height - signature_height) * (1 - normalized_y))
     signature_y = max(52, min(signature_section_top + 42, signature_y))
-
     signature_image = ImageReader(BytesIO(signature_bytes))
+
     pdf.drawImage(
         signature_image,
         signature_x,
@@ -196,91 +228,37 @@ def generate_approved_document_pdf(
     return buffer.getvalue()
 
 
-def stamp_signature_on_pdf(
+def stamp_text_approval_on_pdf(
     *,
-    original_pdf_bytes: bytes, # The original PDF by User
-    signature_bytes: bytes, # Picture of signature by Owner
-    approved_at: datetime, # Timestamp of approval
-    signature_position: dict[str, Any] | None = None, # Optional position for signature placement (x, y, width as normalized values between 0 and 1
+    original_pdf_bytes: bytes,
+    approved_by_name: str,
+    approved_at: datetime,
 ) -> bytes:
     _ensure_reportlab()
     _ensure_pdf_stamper()
 
     reader = PdfReader(BytesIO(original_pdf_bytes))
     if not reader.pages:
-      raise RuntimeError("Original PS PDF has no pages.")
+        raise RuntimeError("Original PS PDF has no pages.")
 
     writer = PdfWriter()
     first_page = reader.pages[0]
     page_width = float(first_page.mediabox.width)
     page_height = float(first_page.mediabox.height)
+    if approved_at.tzinfo is None:
+        approved_at = approved_at.replace(tzinfo=timezone.utc)
 
-    # Signature placement is fixed to the owner slot on the PS template.
-    fixed_slot = get_fixed_owner_signature_slot()
-    requested_position = signature_position
-    normalized_x = fixed_slot["x"]
-    normalized_top = fixed_slot["top"]
-    normalized_width = fixed_slot["width"]
+    stamp_text = _format_thai_approval_stamp(approved_by_name, approved_at)
+    stamp_font_name = _get_thai_approval_font_name()
 
-    with Image.open(BytesIO(signature_bytes)) as signature_image:
-        source_width, source_height = signature_image.size
-
-    signature_width = _clamp(page_width * normalized_width, 72.0, page_width * 0.38)
-    signature_height = signature_width * (source_height / max(source_width, 1))
-    timestamp_text = f"Approved at: {_format_datetime(approved_at)}"
-    timestamp_font_size = FIXED_OWNER_TIMESTAMP_FONT_SIZE
-    timestamp_gap = FIXED_OWNER_TIMESTAMP_GAP
-    page_padding_x = 14
-    page_padding_y = 18
-    stamp_height = signature_height + timestamp_gap + timestamp_font_size
-
-    signature_x = _clamp(
-        normalized_x * page_width,
-        page_padding_x,
-        max(page_padding_x, page_width - signature_width - page_padding_x),
-    )
-    stamp_top_offset = _clamp(
-        normalized_top * page_height,
-        page_padding_y,
-        max(page_padding_y, page_height - stamp_height - page_padding_y),
-    )
-    signature_y = page_height - stamp_top_offset - signature_height
-    timestamp_x = page_width - page_padding_x
-    timestamp_y = page_padding_y
-
-    logger.warning(
-        "Stamping approved PDF signature with fixed owner slot: requested_position=%s slot=%s page=(%.2f, %.2f) "
-        "signature_size=(%.2f, %.2f) signature_xy=(%.2f, %.2f) stamp_top_offset=%.2f timestamp_footer=(%.2f, %.2f)",
-        requested_position,
-        fixed_slot,
-        page_width,
-        page_height,
-        signature_width,
-        signature_height,
-        signature_x,
-        signature_y,
-        stamp_top_offset,
-        timestamp_x,
-        timestamp_y,
-    )
-    
     overlay_buffer = BytesIO()
     overlay_canvas = canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
-    overlay_canvas.drawImage(
-        ImageReader(BytesIO(signature_bytes)),
-        signature_x,
-        signature_y,
-        width=signature_width,
-        height=signature_height,
-        mask="auto",
-        preserveAspectRatio=True,
-    )
     overlay_canvas.setFillColor(colors.HexColor("#475569"))
-    overlay_canvas.setFont("Helvetica", timestamp_font_size)
+    overlay_canvas.setFont(stamp_font_name, 10)
     overlay_canvas.drawRightString(
-        timestamp_x,
-        timestamp_y,
-        timestamp_text,
+        page_width - 20,
+        20,
+        stamp_text,
     )
     overlay_canvas.save()
     overlay_buffer.seek(0)

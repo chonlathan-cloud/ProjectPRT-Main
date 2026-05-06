@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, MoreHorizontal, Wallet, TrendingUp, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, FileText, Loader2 } from 'lucide-react';
 import  { getDashboardData, DashboardData, getCaseAttachments } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
+import { openDocumentPreview } from '../utils/documentPreview';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie
@@ -81,11 +82,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
     setSelectedYear(prev => prev + 1);
   };
 
-  const openAttachment = (url: string) => {
-    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!newWindow) {
-      window.location.href = url;
-    }
+  const openAttachment = (url: string, transaction: DashboardTransaction) => {
+    openDocumentPreview({
+      url,
+      title: transaction.description,
+      subtitle: transaction.name,
+    });
   };
 
   const resolveTransactionAttachment = async (transaction: DashboardTransaction) => {
@@ -99,6 +101,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
     try {
       const attachments = await getCaseAttachments(transaction.case_id);
       const preferredAttachment =
+        attachments.find((attachment) => attachment.type === 'APPROVED_PDF') ||
         attachments.find((attachment) => attachment.type === 'RECEIPT') ||
         attachments[0] ||
         null;
@@ -126,13 +129,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
 
     const cachedUrl = attachmentUrlByTransactionId[transaction.id];
     if (cachedUrl) {
-      openAttachment(cachedUrl);
+      openAttachment(cachedUrl, transaction);
       return;
     }
 
     const resolvedUrl = await resolveTransactionAttachment(transaction);
     if (resolvedUrl) {
-      openAttachment(resolvedUrl);
+      openAttachment(resolvedUrl, transaction);
     }
   };
 

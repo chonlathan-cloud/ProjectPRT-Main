@@ -1,5 +1,3 @@
-import base64
-import binascii
 from datetime import datetime, timezone
 from typing import Optional, List, Annotated
 from uuid import UUID
@@ -11,6 +9,7 @@ from sqlalchemy import select, desc, func
 
 from app.services.doc_numbers import generate_document_no
 
+from app.core.settings import settings
 from app.db import get_db
 from app.deps import Role, has_role, get_current_user, UserInDB
 from app.models import (
@@ -29,7 +28,7 @@ from app.schemas.case import CaseCreate, CaseResponse
 from app.schemas.files import FileUploadResponse
 from app.services.audit import log_audit_event
 from app.services import gcs, pdf as pdf_service
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 router = APIRouter(
     prefix="/api/v1/cases",
@@ -49,6 +48,7 @@ class CaseAdminView(BaseModel):
     department: Optional[str] = None
     is_receipt_uploaded: bool
     ps_url: Optional[str] = None
+    approved_pdf_url: Optional[str] = None
     mime_type: Optional[str] = None
 
     class Config:
@@ -64,17 +64,6 @@ class PaginatedCaseAdminResponse(BaseModel):
     page: int
     limit: int
     total_pages: int
-
-
-class SignaturePlacementRequest(BaseModel):
-    x: float = Field(..., ge=0.0, le=1.0)
-    y: float = Field(..., ge=0.0, le=1.0)
-    width: float = Field(..., gt=0.05, le=0.5)
-
-
-class CaseApproveRequest(BaseModel):
-    signature_base64: str
-    signature_position: Optional[SignaturePlacementRequest] = None
 
 # --- Helper Functions ---
 def generate_case_no() -> str:
@@ -95,6 +84,18 @@ def _get_case_folder_name(db: Session, db_case: Case) -> str:
     if doc and doc.doc_no:
         return doc.doc_no
     return db_case.case_no
+
+
+def _get_gcs_object_name(gcs_uri: str | None) -> str | None:
+    if not gcs_uri or gcs_uri.startswith("pending-"):
+        return None
+
+    return gcs_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
+
+
+def _generate_document_pdf_url(gcs_uri: str | None) -> str | None:
+    object_name = _get_gcs_object_name(gcs_uri)
+    return gcs.generate_signed_download_url(object_name) if object_name else None
 
 
 def _can_see_all_cases(current_user: UserInDB) -> bool:
@@ -135,39 +136,11 @@ def _map_case_admin_results(db: Session, results: list) -> list[CaseAdminView]:
             department=row.department,
             is_receipt_uploaded=bool(row.is_receipt_uploaded),
             ps_url=gcs.generate_signed_download_url(ps_gcs_uri) if ps_gcs_uri else None,
+            approved_pdf_url=_generate_document_pdf_url(getattr(row, "pdf_uri", None)),
             mime_type=ps_mime_type
         ))
 
     return mapped_results
-
-
-def _decode_signature_payload(signature_base64: str) -> tuple[bytes, str, str]:
-    if not signature_base64 or "," not in signature_base64:
-        raise HTTPException(status_code=400, detail="signature_base64 must be a valid data URL")
-
-    header, encoded_data = signature_base64.split(",", 1)
-    if not header.startswith("data:") or ";base64" not in header:
-        raise HTTPException(status_code=400, detail="signature_base64 must include a supported base64 header")
-
-    mime_type = header[5:].split(";")[0].strip().lower()
-    extension_map = {
-        "image/png": "png",
-        "image/jpeg": "jpg",
-        "image/jpg": "jpg",
-        "image/webp": "webp",
-        "image/gif": "gif",
-    }
-    file_extension = extension_map.get(mime_type)
-    if not file_extension:
-        raise HTTPException(status_code=400, detail="Unsupported signature mime type")
-
-    try:
-        file_bytes = base64.b64decode(encoded_data, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise HTTPException(status_code=400, detail="Invalid signature_base64 payload") from exc
-
-    return file_bytes, mime_type, file_extension
-
 # --- Endpoints ---
 
 @router.post("/", response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
@@ -317,7 +290,6 @@ async def submit_case(
 @router.post("/{case_id}/approve", response_model=WorkflowResponse)
 async def approve_case(
     case_id: UUID,
-    payload: CaseApproveRequest,
     current_user: Annotated[UserInDB, Depends(has_role([Role.FINANCE, Role.ADMIN, Role.ACCOUNTING]))],
     db: Session = Depends(get_db)
 ):
@@ -335,27 +307,14 @@ async def approve_case(
     if not doc:
         raise HTTPException(409, "Case has no generated document to approve.")
 
+    approved_by_name = (current_user.name or "").strip()
+    if not approved_by_name:
+        raise HTTPException(409, "Authenticated user has no display name for approval stamping.")
+
     doc_no = doc.doc_no
     folder_name = _get_case_folder_name(db, db_case)
-
-    signature_bytes, signature_mime_type, signature_extension = _decode_signature_payload(payload.signature_base64)
-    signature_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    signature_blob_name = f"{folder_name}/{signature_timestamp}_approval-signature.{signature_extension}"
-    gcs.upload_bytes(
-        signature_blob_name,
-        signature_bytes,
-        content_type=signature_mime_type,
-    )
-    signature_attachment = Attachment(
-        case_id=case_id,
-        type=AttachmentType.SIGNATURE,
-        gcs_uri=signature_blob_name,
-        uploaded_by=current_user.username,
-    )
-    db.add(signature_attachment)
-    db.flush()
-
     approval_timestamp = datetime.now(timezone.utc)
+    approved_pdf_timestamp = approval_timestamp.strftime("%Y%m%d%H%M%S")
     ps_attachment = db.query(Attachment)\
         .filter(
             Attachment.case_id == case_id,
@@ -371,14 +330,12 @@ async def approve_case(
         raise HTTPException(409, "PS attachment must be a PDF for approval stamping.")
 
     original_ps_pdf_bytes = gcs.download_bytes(ps_attachment.gcs_uri)
-    approved_pdf_bytes = pdf_service.stamp_signature_on_pdf(
+    approved_pdf_bytes = pdf_service.stamp_text_approval_on_pdf(
         original_pdf_bytes=original_ps_pdf_bytes,
-        signature_bytes=signature_bytes,
+        approved_by_name=approved_by_name,
         approved_at=approval_timestamp,
-        signature_position=payload.signature_position.model_dump() if payload.signature_position else None,
     )
-    applied_signature_slot = pdf_service.get_fixed_owner_signature_slot()
-    approved_pdf_blob_name = f"{folder_name}/{signature_timestamp}_{doc_no}_approved.pdf"
+    approved_pdf_blob_name = f"{folder_name}/{approved_pdf_timestamp}_{doc_no}_approved.pdf"
     approved_pdf_uri = gcs.upload_bytes(
         approved_pdf_blob_name,
         approved_pdf_bytes,
@@ -403,11 +360,8 @@ async def approve_case(
             "doc_no": doc_no,
             "approved_by": db_case.approved_by,
             "approved_at": db_case.approved_at.isoformat() if db_case.approved_at else None,
-            "signature_attachment_id": str(signature_attachment.id),
-            "signature_gcs_uri": signature_blob_name,
+            "approval_method": "text_stamping",
             "approved_pdf_uri": approved_pdf_uri,
-            "requested_signature_position": payload.signature_position.model_dump() if payload.signature_position else None,
-            "applied_signature_slot": applied_signature_slot,
         }
     )
     db.commit()
@@ -420,10 +374,7 @@ async def approve_case(
         audit_details={
             "approved_by": db_case.approved_by,
             "approved_at": db_case.approved_at.isoformat() if db_case.approved_at else None,
-            "signature_attachment_id": str(signature_attachment.id),
-            "signature_url": gcs.generate_signed_download_url(signature_blob_name),
             "approved_pdf_url": gcs.generate_signed_download_url(approved_pdf_blob_name),
-            "applied_signature_slot": applied_signature_slot,
         }
     )
 
@@ -503,6 +454,7 @@ async def read_cases(
             Case.is_receipt_uploaded,
             Case.department_id.label("department"),
             Document.doc_no,
+            Document.pdf_uri,
             User.name.label("requester_name")
         )
         .outerjoin(Document, Case.id == Document.case_id)
@@ -556,6 +508,7 @@ async def read_cases_paged(
             Case.is_receipt_uploaded,
             Case.department_id.label("department"),
             Document.doc_no,
+            Document.pdf_uri,
             User.name.label("requester_name")
         )
         .outerjoin(Document, Case.id == Document.case_id)
@@ -614,6 +567,7 @@ async def search_cases(
             department=row.department_id,
             is_receipt_uploaded=bool(row.is_receipt_uploaded),
             ps_url=ps_url,
+            approved_pdf_url=_generate_document_pdf_url(doc.pdf_uri if doc else None),
             mime_type=ps_mime_type
         ))
     return mapped_results
@@ -648,6 +602,7 @@ async def search_cases_paged(
             Case.is_receipt_uploaded,
             Case.department_id.label("department"),
             Document.doc_no,
+            Document.pdf_uri,
             User.name.label("requester_name")
         )
         .join(Document, Case.id == Document.case_id)
