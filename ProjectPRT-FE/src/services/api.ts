@@ -1,5 +1,11 @@
 import axios from 'axios';
 import { Category, CasePayload, CaseResponse, User, BankAccount, AdminCaseView } from '../../types';
+import {
+  clearAuthSession,
+  getAuthToken,
+  isTokenExpired,
+  notifyAuthSessionExpired,
+} from './auth';
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 const API_BASE_URL = `${BASE_URL}/api/v1`;
 // --- CONFIGURATION ---
@@ -23,8 +29,14 @@ export interface WorkflowResponse {
 
 // Auto-inject Token
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = getAuthToken();
   if (token) {
+    if (isTokenExpired(token)) {
+      clearAuthSession();
+      notifyAuthSessionExpired();
+      return Promise.reject(new Error('Session expired. Please sign in again.'));
+    }
+
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -143,6 +155,15 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    const status = error.response?.status;
+    const requestUrl = String(error.config?.url || '');
+    const isLoginRequest = requestUrl.includes('/auth/login');
+
+    if (status === 401 && !isLoginRequest && getAuthToken()) {
+      clearAuthSession();
+      notifyAuthSessionExpired();
+    }
+
     return Promise.reject(error);
   }
 );
