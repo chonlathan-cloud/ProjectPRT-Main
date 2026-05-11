@@ -7,13 +7,15 @@ import {
   MessageSquare,
   CheckCircle,
   Files,
-  Users
+  Users,
+  LogOut
 } from 'lucide-react';
 import { ViewType } from '../../types';
 
 interface SidebarProps {
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
+  onLogout: () => void;
 }
 
 // MenuItem definition
@@ -48,7 +50,11 @@ const NavButton: React.FC<NavButtonProps> = ({ item, isActive, onClick }) => (
   </button>
 );
 
-const UserProfile: React.FC = () => {
+interface UserProfileProps {
+  onLogout: () => void;
+}
+
+const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
   const [user, setUser] = React.useState<{ name: string; position?: string } | null>(null);
 
   React.useEffect(() => {
@@ -66,23 +72,34 @@ const UserProfile: React.FC = () => {
   const displayPosition = user?.position || 'Staff';
 
   return (
-    <div className="bg-sky-500 dark:bg-sky-800 rounded-xl p-4 flex items-center gap-3 shadow-inner">
-      <div className="w-12 h-12 rounded-full overflow-hidden bg-white border-2 border-white/50 dark:border-sky-600">
-        <img
-          src="https://picsum.photos/seed/user123/100"
-          alt="User"
-          className="w-full h-full object-cover"
-        />
+    <div className="space-y-3 rounded-xl bg-sky-500 p-4 shadow-inner dark:bg-sky-800">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-full overflow-hidden bg-white border-2 border-white/50 dark:border-sky-600">
+          <img
+            src="https://picsum.photos/seed/user123/100"
+            alt="User"
+            className="w-full h-full object-cover"
+          />
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{displayName}</h3>
+          <p className="text-xs text-blue-900 dark:text-sky-200 font-medium">{displayPosition}</p>
+        </div>
       </div>
-      <div className="flex-1 overflow-hidden">
-        <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{displayName}</h3>
-        <p className="text-xs text-blue-900 dark:text-sky-200 font-medium">{displayPosition}</p>
-      </div>
+      <button
+        type="button"
+        onClick={onLogout}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-white/90 px-3 py-2 text-sm font-bold text-slate-800 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/80 dark:bg-sky-950/70 dark:text-sky-100 dark:hover:bg-sky-950"
+        aria-label="Logout"
+      >
+        <LogOut size={16} />
+        <span>Logout</span>
+      </button>
     </div>
   );
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, onLogout }) => {
   return (
     <aside className="w-64 bg-sky-400 dark:bg-sky-950 dark:border-r dark:border-sky-900 flex flex-col h-screen sticky top-0 transition-colors duration-200">
       {/* Logo Section */}
@@ -108,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
 
       {/* User Profile */}
       <div className="mt-auto p-4">
-        <UserProfile />
+        <UserProfile onLogout={onLogout} />
       </div>
     </aside>
   );

@@ -13,10 +13,11 @@ import { ProfitLoss } from './src/components/ProfitLoss';
 import { DocumentManager } from './src/components/DocumentManager';
 import { UserManager } from './src/components/UserManager';
 import { DocumentPreviewPage } from './src/components/DocumentPreviewPage';
+import { AUTH_SESSION_EXPIRED_EVENT, clearAuthSession, hasValidAuthSession } from './src/services/auth';
 
 const App: React.FC = () => {
   const previewId = new URLSearchParams(window.location.search).get('documentPreview');
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(localStorage.getItem('token')));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => hasValidAuthSession());
   const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
@@ -28,6 +29,20 @@ const App: React.FC = () => {
     if (savedTheme === 'dark') {
       setIsDarkMode(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setIsAuthenticated(false);
+      setCurrentView(ViewType.DASHBOARD);
+      setIsSigningUp(false);
+    };
+
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+
+    return () => {
+      window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
   }, []);
 
   useEffect(() => {
@@ -44,6 +59,13 @@ const App: React.FC = () => {
 
   const handleLogin = () => {
     setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setIsAuthenticated(false);
+    setCurrentView(ViewType.DASHBOARD);
+    setIsSigningUp(false);
   };
 
   const renderView = () => {
@@ -96,7 +118,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-gray-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      <Sidebar activeView={currentView} onViewChange={setCurrentView} />
+      <Sidebar activeView={currentView} onViewChange={setCurrentView} onLogout={handleLogout} />
       <main className="flex-1 overflow-auto">
         {renderView()}
       </main>

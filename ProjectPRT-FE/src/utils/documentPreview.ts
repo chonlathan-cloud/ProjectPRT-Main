@@ -33,8 +33,9 @@ export const openDocumentPreview = (payload: DocumentPreviewPayload) => {
   previewUrl.hash = '';
   previewUrl.searchParams.set('documentPreview', previewId);
 
-  const newWindow = window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer');
-  if (!newWindow) {
-    window.alert('ไม่สามารถเปิดแท็บใหม่ได้ กรุณาอนุญาต popup สำหรับเว็บไซต์นี้');
+  try {
+    window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    console.error('Failed to open document preview:', error);
   }
 };
