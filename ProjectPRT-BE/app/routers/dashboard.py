@@ -175,7 +175,7 @@ async def get_full_dashboard(
         
         # จัดการ Null Safety
         cat_name = category.name_th if category else "General"
-        initial = category.name_en[0].upper() if (category and category.name_en) else "D"
+        initial = doc.doc_type.value[0].upper() if doc.doc_type else "D"
         requester_name = user.name if user else (case_obj.requester_id or "Unknown")
 
         tx_list.append(TransactionItem(
