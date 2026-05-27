@@ -1091,17 +1091,24 @@ export const Form: React.FC = () => {
                          className="hidden" 
                          ref={psUploadRef}
                          onChange={(e) => {
-                           setSelectedPsFile(e.target.files?.[0] || null);
+                           const file = e.target.files?.[0] || null;
+                           if (file && (file.type !== 'application/pdf' || !file.name.toLowerCase().endsWith('.pdf'))) {
+                             setSelectedPsFile(null);
+                             setFieldErrors(prev => ({ ...prev, psFile: 'กรุณาอัปโหลดใบ ปส เป็นไฟล์ PDF เท่านั้น' }));
+                             e.target.value = '';
+                             return;
+                           }
+                           setSelectedPsFile(file);
                            clearFieldError('psFile');
                          }}
-                         accept=".pdf,.jpg,.jpeg,.png"
+                         accept="application/pdf,.pdf"
                        />
                        <button 
                           onClick={() => psUploadRef.current?.click()}
                          className={`flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed text-sm font-medium transition-all ${fieldErrors.psFile ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100' : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
                        >
                          <Upload size={18} />
-                         {selectedPsFile ? selectedPsFile.name : 'เลือกไฟล์ ปส (PDF, JPEG, PNG)'}
+                         {selectedPsFile ? selectedPsFile.name : 'เลือกไฟล์ ปส (PDF)'}
                        </button>
 
                        {/* Preview Area - Handles all orientations and sizes */}

@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from sqlalchemy import select, desc, func
+from sqlalchemy import String, cast, or_, select, desc, func
 
 from app.services.doc_numbers import generate_document_no
 
@@ -66,16 +66,53 @@ class PaginatedCaseAdminResponse(BaseModel):
     total_pages: int
 
 # --- Helper Functions ---
+PRIVILEGED_CASE_ROLES = [
+    Role.FINANCE,
+    Role.ACCOUNTING,
+    Role.ADMIN,
+    Role.EXECUTIVE,
+    Role.TREASURY,
+]
+
+
 def generate_case_no() -> str:
     today_str = datetime.now(timezone.utc).strftime("%y%m%d")
     unique_suffix = uuid.uuid4().hex[:6].upper()
     return f"CAS-{today_str}-{unique_suffix}"
 
-def _ensure_case_visibility(db_case: Case, current_user: UserInDB) -> None:
-    can_see_all = any(role in current_user.roles for role in [
-        Role.FINANCE, Role.ACCOUNTING, Role.ADMIN, Role.EXECUTIVE, Role.TREASURY
+
+def _unique_identifiers(values: list[str | None]) -> list[str]:
+    identifiers: list[str] = []
+    for value in values:
+        if value and value not in identifiers:
+            identifiers.append(value)
+    return identifiers
+
+
+def _case_owner_identifiers(current_user: UserInDB) -> list[str]:
+    return _unique_identifiers([
+        current_user.id,
+        current_user.email,
+        current_user.google_sub,
+        current_user.username,
     ])
-    if not can_see_all and db_case.requester_id != current_user.username:
+
+
+def _case_owner_filter(current_user: UserInDB):
+    return Case.requester_id.in_(_case_owner_identifiers(current_user))
+
+
+def _case_user_join_condition():
+    return or_(
+        Case.requester_id == User.email,
+        Case.requester_id == User.google_sub,
+        Case.requester_id == cast(User.id, String),
+    )
+
+
+def _ensure_case_visibility(db_case: Case, current_user: UserInDB) -> None:
+    can_see_all = _can_see_all_cases(current_user)
+    if not can_see_all and db_case.requester_id not in _case_owner_identifiers(current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this case.")
 
 
@@ -99,9 +136,15 @@ def _generate_document_pdf_url(gcs_uri: str | None) -> str | None:
 
 
 def _can_see_all_cases(current_user: UserInDB) -> bool:
-    return any(role in current_user.roles for role in [
-        Role.FINANCE, Role.ACCOUNTING, Role.ADMIN, Role.EXECUTIVE, Role.TREASURY
-    ])
+    return any(role in current_user.roles for role in PRIVILEGED_CASE_ROLES)
+
+
+def _validate_ps_pdf_upload(file: UploadFile, file_content: bytes) -> None:
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    filename = (file.filename or "").lower()
+    allowed_content_types = {"", "application/pdf", "application/octet-stream", "binary/octet-stream"}
+    if content_type not in allowed_content_types or not filename.endswith(".pdf") or not file_content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="PS attachment must be a valid PDF file.")
 
 
 def _map_case_admin_results(db: Session, results: list) -> list[CaseAdminView]:
@@ -192,6 +235,7 @@ async def upload_receipt(
     db_case = db.execute(select(Case).filter_by(id=case_id)).scalar_one_or_none()
     if not db_case:
         raise HTTPException(status_code=404, detail="Case not found")
+    _ensure_case_visibility(db_case, current_user)
 
     doc = db.execute(select(Document).filter_by(case_id=case_id)).scalar_one_or_none()
     folder_name = doc.doc_no if doc else db_case.case_no
@@ -199,10 +243,12 @@ async def upload_receipt(
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     destination_blob_name = f"{folder_name}/{timestamp}_{file.filename}"
     file_content = await file.read()
+    if attachment_type == AttachmentType.PS:
+        _validate_ps_pdf_upload(file, file_content)
     gcs_uri = gcs.upload_bytes(
         destination_blob_name,
         file_content,
-        content_type=file.content_type or "application/octet-stream",
+        content_type="application/pdf" if attachment_type == AttachmentType.PS else file.content_type or "application/octet-stream",
     )
 
     attachment = Attachment(
@@ -235,13 +281,27 @@ async def submit_case(
     if not db_case:
         raise HTTPException(404, "Case not found.")
 
-    if db_case.requester_id != current_user.username:
+    if db_case.requester_id not in _case_owner_identifiers(current_user):
         raise HTTPException(403, "Not authorized.")
     if db_case.status != CaseStatus.DRAFT:
         raise HTTPException(409, "Only DRAFT cases can be submitted.")
 
     # --- Gen Document No ---
     category = db.execute(select(Category).filter_by(id=db_case.category_id)).scalar_one()
+    if category.type == CategoryType.EXPENSE:
+        ps_attachment = db.query(Attachment)\
+            .filter(
+                Attachment.case_id == case_id,
+                Attachment.type == AttachmentType.PS,
+            )\
+            .order_by(desc(Attachment.uploaded_at))\
+            .first()
+        if not ps_attachment:
+            raise HTTPException(409, "Expense cases require a PS PDF before submit.")
+
+        ps_mime_type = gcs.get_blob_content_type(ps_attachment.gcs_uri)
+        if ps_mime_type and ps_mime_type.lower() != "application/pdf":
+            raise HTTPException(409, "PS attachment must be a PDF before submit.")
 
     if category.type == CategoryType.EXPENSE:
         doc_type = DocumentType.PV
@@ -458,12 +518,12 @@ async def read_cases(
             User.name.label("requester_name")
         )
         .outerjoin(Document, Case.id == Document.case_id)
-        .outerjoin(User, Case.requester_id == User.email)
+        .outerjoin(User, _case_user_join_condition())
     )
 
     can_see_all = _can_see_all_cases(current_user)
     if not can_see_all:
-        query = query.where(Case.requester_id == current_user.username)
+        query = query.where(_case_owner_filter(current_user))
 
     if status:
         query = query.where(Case.status == status)
@@ -486,7 +546,7 @@ async def read_cases_paged(
 ):
     conditions = []
     if not _can_see_all_cases(current_user):
-        conditions.append(Case.requester_id == current_user.username)
+        conditions.append(_case_owner_filter(current_user))
     if status:
         conditions.append(Case.status == status)
     if missing_only:
@@ -512,7 +572,7 @@ async def read_cases_paged(
             User.name.label("requester_name")
         )
         .outerjoin(Document, Case.id == Document.case_id)
-        .outerjoin(User, Case.requester_id == User.email)
+        .outerjoin(User, _case_user_join_condition())
     )
 
     if conditions:
@@ -533,15 +593,19 @@ async def read_cases_paged(
 
 @router.get("/search-by-doc", response_model=List[CaseAdminView])
 async def search_cases(
+    current_user: Annotated[UserInDB, Depends(get_current_user)],
     doc_no: str = Query(..., min_length=3),
     db: Session = Depends(get_db)
 ):
     """
     ค้นหา Case จากเลขที่เอกสาร (PV-xxxx, RV-xxxx)
     """
-    results = db.query(Case).join(Document).filter(
+    query = db.query(Case).join(Document).filter(
         Document.doc_no.ilike(f"%{doc_no}%")
-    ).all()
+    )
+    if not _can_see_all_cases(current_user):
+        query = query.filter(_case_owner_filter(current_user))
+    results = query.all()
 
     mapped_results = []
     for row in results:
@@ -584,7 +648,7 @@ async def search_cases_paged(
 ):
     conditions = [Document.doc_no.ilike(f"%{doc_no}%")] # Find  Document Number
     if not _can_see_all_cases(current_user):
-        conditions.append(Case.requester_id == current_user.username)
+        conditions.append(_case_owner_filter(current_user))
     if missing_only:
         conditions.append(Case.is_receipt_uploaded.is_(False))
 
@@ -606,7 +670,7 @@ async def search_cases_paged(
             User.name.label("requester_name")
         )
         .join(Document, Case.id == Document.case_id)
-        .outerjoin(User, Case.requester_id == User.email)
+        .outerjoin(User, _case_user_join_condition())
         .where(*conditions)
         .order_by(Case.created_at.desc())
         .offset((page - 1) * limit) # skip row how many per page

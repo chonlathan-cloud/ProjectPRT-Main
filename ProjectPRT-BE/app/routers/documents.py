@@ -6,7 +6,7 @@ from sqlalchemy import func, desc, extract
 from datetime import datetime, date
 
 from app.db import get_db
-from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER
+from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_FINANCE, ROLE_VIEWER
 from app.models import Document, DocumentType, Case, Category, CaseStatus, JVLineItem, Attachment, AttachmentType
 from app.services.doc_numbers import generate_document_no
 from app.services import gcs
@@ -143,12 +143,17 @@ async def get_full_dashboard(
 
 @router.post("/jv", response_model=DocumentResponse)
 async def create_jv(
+    request: Request,
     payload: JVCreate,
     db: Session = Depends(get_db)
 ):
     """
     สร้าง JV โดยการรวม Case (PV/RV) หลายๆ ใบเข้าด้วยกัน
     """
+    user, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_FINANCE])
+    if auth_error:
+        return auth_error
+
     # 1. ตรวจสอบ Case หลัก
     main_case = db.query(Case).filter(Case.id == payload.main_case_id).first()
     if not main_case:
@@ -172,8 +177,9 @@ async def create_jv(
     # วนลูปเช็ค Case อื่นๆ และรวมยอด
     for linked_id in payload.linked_case_ids:
         c = db.query(Case).filter(Case.id == linked_id).first()
-        if c:
-            total_amount += c.requested_amount
+        if not c:
+            raise HTTPException(404, f"Linked case not found: {linked_id}")
+        total_amount += c.requested_amount
     
     # 3. สร้างเอกสาร JV (ใช้เลข Running ใหม่)
     # (สมมติฟังก์ชัน _generate_document_no มีอยู่แล้วในไฟล์นี้ หรือ import มา)
@@ -185,7 +191,7 @@ async def create_jv(
         doc_no=jv_no,
         amount=total_amount,
         pdf_uri="pending-jv",
-        created_by="system" 
+        created_by=user.email or user.google_sub or str(user.id)
     )
     db.add(jv_doc)
     try:

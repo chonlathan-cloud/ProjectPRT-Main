@@ -9,8 +9,8 @@ from sqlalchemy import select
 
 from app.core.settings import settings
 from app.db import get_db
-from app.deps import get_current_user, UserInDB
-from app.models import Case, Document, Attachment, AttachmentType, CaseStatus
+from app.deps import Role, get_current_user, UserInDB
+from app.models import Case, Document, Attachment, AttachmentType
 from app.services import gcs
 from app.schemas.files import FileUploadResponse, SignedUrlResponse
 
@@ -25,6 +25,46 @@ def _get_gcs_object_name(gcs_uri: str | None) -> str | None:
         return None
 
     return gcs_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
+
+
+def _unique_identifiers(values: list[str | None]) -> list[str]:
+    identifiers: list[str] = []
+    for value in values:
+        if value and value not in identifiers:
+            identifiers.append(value)
+    return identifiers
+
+
+def _case_owner_identifiers(current_user: UserInDB) -> list[str]:
+    return _unique_identifiers([
+        current_user.id,
+        current_user.email,
+        current_user.google_sub,
+        current_user.username,
+    ])
+
+
+def _can_see_all_cases(current_user: UserInDB) -> bool:
+    return any(role in current_user.roles for role in [
+        Role.FINANCE,
+        Role.ACCOUNTING,
+        Role.ADMIN,
+        Role.EXECUTIVE,
+        Role.TREASURY,
+    ])
+
+
+def _ensure_case_visibility(db_case: Case, current_user: UserInDB) -> None:
+    if not _can_see_all_cases(current_user) and db_case.requester_id not in _case_owner_identifiers(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this case.")
+
+
+def _validate_ps_pdf_upload(file: UploadFile, file_content: bytes) -> None:
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    filename = (file.filename or "").lower()
+    allowed_content_types = {"", "application/pdf", "application/octet-stream", "binary/octet-stream"}
+    if content_type not in allowed_content_types or not filename.endswith(".pdf") or not file_content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="PS attachment must be a valid PDF file.")
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
@@ -44,6 +84,7 @@ async def upload_file(
     db_case = db.execute(select(Case).filter_by(id=case_id)).scalar_one_or_none()
     if not db_case:
         raise HTTPException(status_code=404, detail="Case not found")
+    _ensure_case_visibility(db_case, current_user)
 
     # 2. Upload to GCS
     # Generate unique filename: {case_id}/{timestamp}_{original_name}
@@ -52,12 +93,14 @@ async def upload_file(
     
     # Read file content
     file_content = await file.read()
+    if attachment_type == AttachmentType.PS:
+        _validate_ps_pdf_upload(file, file_content)
     
     # Upload
     public_url = gcs.upload_bytes(
         destination_blob_name, 
         file_content, 
-        content_type=file.content_type
+        content_type="application/pdf" if attachment_type == AttachmentType.PS else file.content_type
     )
 
     # 3. Save Attachment Record
@@ -91,7 +134,11 @@ async def list_files(
     current_user: Annotated[UserInDB, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    # Validate Case access rights here if strictly needed
+    db_case = db.execute(select(Case).filter_by(id=case_id)).scalar_one_or_none()
+    if not db_case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    _ensure_case_visibility(db_case, current_user)
+
     attachments = db.execute(select(Attachment).filter_by(case_id=case_id)).scalars().all()
 
     files: list[FileUploadResponse] = []

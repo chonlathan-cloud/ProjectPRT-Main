@@ -2,19 +2,19 @@ import { DocumentData } from '../components/DocumentTemplates';
 
 // Simulated database
 let counter = {
-  withdrawal: 124,
-  return: 45,
-  purchase: 89
+  pv: 124,
+  rv: 45,
+  jv: 89
 };
 
-export const getNextDocNumber = async (type: 'withdrawal' | 'return' | 'purchase'): Promise<string> => {
+export const getNextDocNumber = async (type: DocumentData['type']): Promise<string> => {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 800));
   
   let prefix = 'DOC';
-  if (type === 'withdrawal') prefix = 'CR';
-  else if (type === 'return') prefix = 'DB';
-  else if (type === 'purchase') prefix = 'PS';
+  if (type === 'pv') prefix = 'PV';
+  else if (type === 'rv') prefix = 'RV';
+  else if (type === 'jv') prefix = 'JV';
   
   const nextId = (counter[type] + 1).toString().padStart(4, '0');
   
@@ -27,9 +27,9 @@ export const saveDocument = async (data: DocumentData): Promise<{ success: boole
   
   // Generate the number at point of save
   let prefix = 'DOC';
-  if (data.type === 'withdrawal') prefix = 'CR';
-  else if (data.type === 'return') prefix = 'DB';
-  else if (data.type === 'purchase') prefix = 'PS';
+  if (data.type === 'pv') prefix = 'PV';
+  else if (data.type === 'rv') prefix = 'RV';
+  else if (data.type === 'jv') prefix = 'JV';
   
   const nextId = (counter[data.type] + 1).toString().padStart(4, '0');
   const generatedDocNo = `${prefix}-${nextId}`;

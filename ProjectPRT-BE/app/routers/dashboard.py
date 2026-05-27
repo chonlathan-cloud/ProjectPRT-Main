@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, extract, select, case as sql_case
+from sqlalchemy import String, cast, func, desc, extract, or_, select, case as sql_case
 from datetime import datetime
 from typing import List, Optional
 
@@ -26,6 +26,14 @@ router = APIRouter(
     prefix="/api/v1/dashboard",
     tags=["Dashboard"],
 )
+
+
+def _case_user_join_condition():
+    return or_(
+        Case.requester_id == User.email,
+        Case.requester_id == User.google_sub,
+        Case.requester_id == cast(User.id, String),
+    )
 
 @router.get("", response_model=DashboardResponse)
 async def get_full_dashboard(
@@ -146,7 +154,7 @@ async def get_full_dashboard(
         select(Document, Case, Category, User)
         .join(Case, Document.case_id == Case.id)
         .outerjoin(Category, Case.category_id == Category.id) # Outer join กันพลาดถ้าไม่มี Category
-        .outerjoin(User, Case.requester_id == User.email)    # Join User เพื่อเอาชื่อคนขอเบิก
+        .outerjoin(User, _case_user_join_condition())
         .where(
             Case.status.in_(VALID_STATUSES),
             extract('year', Document.created_at) == year

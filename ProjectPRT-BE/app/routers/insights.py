@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, extract, or_
+from sqlalchemy import String, cast, func, extract, or_
 from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session, selectinload
@@ -7,7 +7,7 @@ from uuid import UUID
 
 
 from app.db import get_db
-from app.models import Case, CaseStatus, Document, Category, CategoryType
+from app.models import Case, CaseStatus, Document, Category, CategoryType, User
 from app.schemas.common import ResponseEnvelope, make_success_response
 # คุณอาจต้องสร้าง Schema นี้เพิ่มใน app/schemas/insights.py หรือใส่ไว้ในไฟล์นี้ชั่วคราวก็ได้
 from pydantic import BaseModel
@@ -16,6 +16,33 @@ router = APIRouter(
     prefix="/api/v1/insights",
     tags=["Insights"]
 )
+
+
+def _unique_identifiers(values: list[str | None]) -> list[str]:
+    identifiers: list[str] = []
+    for value in values:
+        if value and value not in identifiers:
+            identifiers.append(value)
+    return identifiers
+
+
+def _requester_filter_values(db: Session, requester_id: str) -> list[str]:
+    user = db.query(User).filter(
+        or_(
+            cast(User.id, String) == requester_id,
+            User.email == requester_id,
+            User.google_sub == requester_id,
+        )
+    ).first()
+    if not user:
+        return [requester_id]
+
+    return _unique_identifiers([
+        requester_id,
+        str(user.id),
+        user.email,
+        user.google_sub,
+    ])
 # --- Response Schemas ---
 class SummaryStats(BaseModel):
     normal_count: int = 0
@@ -63,7 +90,7 @@ def get_insights_data(
 
     # 3. Filter by User (Requester ID)
     if requester_id:
-        query = query.filter(Case.requester_id == requester_id)
+        query = query.filter(Case.requester_id.in_(_requester_filter_values(db, requester_id)))
 
     # 4. Filter by Category
     if category_id:

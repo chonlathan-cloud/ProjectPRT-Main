@@ -273,7 +273,7 @@ export const getUsers = async (): Promise<User[]> => {
   const data = Array.isArray(response.data) ? response.data : (response.data.data || []);
   return data.map((u: any) => ({
     user_id: u.user_id,
-    requester_id: u.google_sub ?? u.email ?? u.user_id,
+    requester_id: u.user_id,
     roles: Array.isArray(u.roles) ? u.roles : [],
     name: u.name ?? u.email,
     email: u.email,
@@ -332,6 +332,22 @@ export const getInsights = async (requesterId?: string, month?: number, year?: n
 export const getCaseAttachments = async (caseId: string): Promise<CaseAttachmentFile[]> => {
   const response = await api.get(`/files/${caseId}/list`);
   return Array.isArray(response.data) ? response.data : (response.data.data || []);
+};
+
+export const getCaseAttachmentContent = async (
+  caseId: string,
+  attachmentType: string = 'PS'
+): Promise<ArrayBuffer> => {
+  const files = await getCaseAttachments(caseId);
+  const file = files.find((item) => item.type === attachmentType);
+  if (!file?.url) {
+    throw new Error(`No ${attachmentType} attachment found for this case.`);
+  }
+
+  const response = await axios.get<ArrayBuffer>(file.url, {
+    responseType: 'arraybuffer',
+  });
+  return response.data;
 };
 
 // Search Documents by Doc No (for JV Consolidation)

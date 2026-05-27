@@ -125,23 +125,23 @@ async def auth_google(payload: GoogleAuthRequest, db: Session = Depends(get_db))
             ),
         )
 
-    user_id = id_info.get("sub")
+    google_sub = id_info.get("sub")
     email = id_info.get("email")
     name = id_info.get("name") or email
 
     # Upsert user
-    db_user = db.query(User).filter(User.google_sub == user_id).first()
+    db_user = db.query(User).filter(User.google_sub == google_sub).first()
     is_first_user = db.query(User).count() == 0
     make_admin = False
     if is_first_user:
         make_admin = True
-    if settings.BOOTSTRAP_ADMIN_SUB and settings.BOOTSTRAP_ADMIN_SUB == user_id:
+    if settings.BOOTSTRAP_ADMIN_SUB and settings.BOOTSTRAP_ADMIN_SUB == google_sub:
         make_admin = True
 
     if not db_user:
         db_user = User(
             id=uuid.uuid4(),
-            google_sub=user_id,
+            google_sub=google_sub,
             email=email,
             name=name,
         )
@@ -167,12 +167,12 @@ async def auth_google(payload: GoogleAuthRequest, db: Session = Depends(get_db))
     db.commit()
     db.refresh(db_user)
 
-    access_token = create_access_token(sub=user_id, email=email, name=name)
+    access_token = create_access_token(sub=str(db_user.id), email=email, name=name)
 
     data = GoogleAuthData(
         access_token=access_token,
         user=GoogleUser(
-            user_id=user_id,
+            user_id=str(db_user.id),
             email=email,
             name=name,
         ),
