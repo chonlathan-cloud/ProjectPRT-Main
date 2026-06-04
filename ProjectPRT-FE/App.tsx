@@ -13,12 +13,22 @@ import { ProfitLoss } from './src/components/ProfitLoss';
 import { DocumentManager } from './src/components/DocumentManager';
 import { UserManager } from './src/components/UserManager';
 import { DocumentPreviewPage } from './src/components/DocumentPreviewPage';
+import { getCurrentUserInfo } from './src/services/api';
 import { AUTH_SESSION_EXPIRED_EVENT, clearAuthSession, hasValidAuthSession } from './src/services/auth';
+import {
+  canAccessView,
+  getDefaultViewForRoles,
+  getStoredUserRoles,
+  isRequesterLimited,
+  normalizeRoles,
+} from './src/utils/permissions';
 
 const App: React.FC = () => {
   const previewId = new URLSearchParams(window.location.search).get('documentPreview');
   const [isAuthenticated, setIsAuthenticated] = useState(() => hasValidAuthSession());
-  const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
+  const [currentUserRoles, setCurrentUserRoles] = useState<string[]>(() => getStoredUserRoles());
+  const [rolesReady, setRolesReady] = useState(() => !hasValidAuthSession() || getStoredUserRoles().length > 0);
+  const [currentView, setCurrentView] = useState<ViewType>(() => getDefaultViewForRoles(getStoredUserRoles()));
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
 
@@ -34,6 +44,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleSessionExpired = () => {
       setIsAuthenticated(false);
+      setCurrentUserRoles([]);
+      setRolesReady(true);
       setCurrentView(ViewType.DASHBOARD);
       setIsSigningUp(false);
     };
@@ -55,21 +67,79 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setRolesReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setRolesReady(false);
+
+    getCurrentUserInfo()
+      .then((currentUser) => {
+        if (cancelled) {
+          return;
+        }
+
+        const roles = normalizeRoles(currentUser.roles);
+        setCurrentUserRoles(roles);
+
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+          try {
+            localStorage.setItem('user', JSON.stringify({ ...JSON.parse(savedUser), roles }));
+          } catch (error) {
+            console.error('Failed to update stored user roles', error);
+          }
+        }
+
+        setCurrentView((view) => (canAccessView(roles, view) ? view : getDefaultViewForRoles(roles)));
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error('Failed to load current user roles:', error);
+        clearAuthSession();
+        setCurrentUserRoles([]);
+        setIsAuthenticated(false);
+        setCurrentView(ViewType.DASHBOARD);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRolesReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
+    setRolesReady(false);
   };
 
   const handleLogout = () => {
     clearAuthSession();
     setIsAuthenticated(false);
+    setCurrentUserRoles([]);
+    setRolesReady(true);
     setCurrentView(ViewType.DASHBOARD);
     setIsSigningUp(false);
   };
 
   const renderView = () => {
-    switch (currentView) {
+    const activeView = canAccessView(currentUserRoles, currentView)
+      ? currentView
+      : getDefaultViewForRoles(currentUserRoles);
+
+    switch (activeView) {
       case ViewType.DASHBOARD:
         return <Dashboard isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
       case ViewType.CHAT_VIEW:
@@ -112,13 +182,28 @@ const App: React.FC = () => {
     );
   }
 
-  if (previewId) {
+  if (!rolesReady) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-100 text-slate-600 dark:bg-slate-950 dark:text-slate-200">
+        <div className="rounded-xl bg-white px-6 py-4 text-sm font-bold shadow-sm dark:bg-slate-900">
+          Loading access...
+        </div>
+      </div>
+    );
+  }
+
+  if (previewId && !isRequesterLimited(currentUserRoles)) {
     return <DocumentPreviewPage previewId={previewId} />;
   }
 
   return (
     <div className="flex min-h-screen bg-gray-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      <Sidebar activeView={currentView} onViewChange={setCurrentView} onLogout={handleLogout} />
+      <Sidebar
+        activeView={currentView}
+        currentUserRoles={currentUserRoles}
+        onViewChange={setCurrentView}
+        onLogout={handleLogout}
+      />
       <main className="flex-1 overflow-auto">
         {renderView()}
       </main>

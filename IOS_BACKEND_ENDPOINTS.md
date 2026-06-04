@@ -131,7 +131,8 @@ Behavior:
 
 - Creates a new user
 - Assigns the default role `requester`
-- Returns an access token
+- Marks the account as pending approval
+- Does not grant usable access until an `admin` or `approver` approves the user
 
 ### 3.3 Google SSO
 
@@ -247,6 +248,7 @@ Allowed roles:
 - `accounting`
 - `viewer`
 - `executive`
+- `approver`
 
 Response:
 
@@ -307,6 +309,7 @@ Allowed roles:
 - `admin`
 - `accounting`
 - `viewer`
+- `approver`
 
 Not currently allowed:
 
@@ -442,9 +445,7 @@ Authorization: Bearer <token>
 
 Allowed roles:
 
-- `finance`
-- `accounting`
-- `admin`
+- `approver`
 
 Request body: none
 
@@ -483,9 +484,7 @@ Content-Type: application/json
 
 Allowed roles:
 
-- `finance`
-- `accounting`
-- `admin`
+- `approver`
 
 Request:
 
@@ -614,6 +613,7 @@ Authorization: Bearer <token>
 Allowed roles:
 
 - `admin`
+- `approver`
 
 Response envelope:
 
@@ -637,7 +637,7 @@ Response envelope:
 
 Important backend note:
 
-- If an Executive user needs the User filter but does not have the `admin` role, this endpoint will return `403`.
+- If an Executive user needs the User filter but does not have the `admin` or `approver` role, this endpoint will return `403`.
 - Recommended backend improvement: add a read-only user option endpoint, for example `GET /api/v1/users/options`, or allow `executive` on a limited user list endpoint.
 
 ## 7. FinBot Tab
@@ -750,7 +750,25 @@ Request:
 }
 ```
 
-### 9.3 Replace User Roles
+### 9.3 Approve Pending User
+
+```http
+POST /api/v1/admin/users/{user_id}/approve
+Authorization: Bearer <token>
+```
+
+Allowed roles:
+
+- `admin`
+- `approver`
+
+Behavior:
+
+- Sets `is_approved = true`
+- Sets `is_active = true`
+- The user can login after approval
+
+### 9.4 Replace User Roles
 
 ```http
 POST /api/v1/admin/users/{user_id}/roles
@@ -776,7 +794,11 @@ Allowed role values:
 - `executive`
 - `viewer`
 
-### 9.4 Soft Delete User
+System-managed role:
+
+- `approver` is the highest-tier role and inherits `admin` permissions, but it is reserved for 1-2 approval authorities per organization and is not assignable through normal user management. Contact the system creator to add or change approvers.
+
+### 9.5 Soft Delete User
 
 ```http
 DELETE /api/v1/admin/users/{user_id}
@@ -830,11 +852,15 @@ Approve:
 POST /api/v1/cases/{case_id}/approve
 ```
 
+Requires role: `approver`
+
 Reject:
 
 ```text
 POST /api/v1/cases/{case_id}/reject
 ```
+
+Requires role: `approver`
 
 ### Insights
 
@@ -872,7 +898,7 @@ Before the iOS team integrates with production, confirm or fix these backend iss
    - `/dashboard` allows `executive` but uses different status filtering
 
 3. **Insights user filter**
-   - `GET /admin/users` is admin-only
+   - `GET /admin/users` is available to `admin` and `approver`
    - If executives need a User filter, add a read-only user options endpoint
 
 4. **Approvals detail endpoint**
@@ -922,4 +948,3 @@ iOS should have at least these service layers:
   - Fetch file list
   - Open signed URL
   - Refresh signed URL when expired
-

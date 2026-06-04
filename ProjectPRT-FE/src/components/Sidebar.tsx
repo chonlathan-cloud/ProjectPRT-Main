@@ -11,9 +11,11 @@ import {
   LogOut
 } from 'lucide-react';
 import { ViewType } from '../../types';
+import { canAccessView } from '../utils/permissions';
 
 interface SidebarProps {
   activeView: ViewType;
+  currentUserRoles: string[];
   onViewChange: (view: ViewType) => void;
   onLogout: () => void;
 }
@@ -25,7 +27,7 @@ const MENU_ITEMS = [
   { id: ViewType.INSIGHTS, label: 'Insights', icon: Lightbulb },
   { id: ViewType.PROFIT_LOSS, label: 'Profit and loss', icon: TrendingUp },
   { id: ViewType.CHAT_VIEW, label: 'Chat View', icon: MessageSquare },
-  { id: ViewType.ADMIN_APPROVAL, label: 'Approvals (Admin)', icon: CheckCircle },
+  { id: ViewType.ADMIN_APPROVAL, label: 'Approvals', icon: CheckCircle },
   { id: ViewType.DOCUMENT_MANAGER, label: 'Document Manager', icon: Files },
   { id: ViewType.USER_MANAGER, label: 'User Management', icon: Users },
 ];
@@ -99,7 +101,9 @@ const UserProfile: React.FC<UserProfileProps> = ({ onLogout }) => {
   );
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeView, currentUserRoles, onViewChange, onLogout }) => {
+  const visibleMenuItems = MENU_ITEMS.filter((item) => canAccessView(currentUserRoles, item.id));
+
   return (
     <aside className="w-64 bg-sky-400 dark:bg-sky-950 dark:border-r dark:border-sky-900 flex flex-col h-screen sticky top-0 transition-colors duration-200">
       {/* Logo Section */}
@@ -112,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, onLo
       <div className="px-4">
         <p className="text-xs font-semibold text-slate-600 dark:text-sky-200 mb-4 px-4 uppercase tracking-wider">Manage</p>
         <nav className="space-y-1">
-          {MENU_ITEMS.map((item) => (
+          {visibleMenuItems.map((item) => (
             <NavButton
               key={item.id}
               item={item}

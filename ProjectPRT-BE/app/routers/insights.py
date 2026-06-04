@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import String, cast, func, extract, or_
-from typing import Optional, List
+from typing import Annotated, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session, selectinload
 from uuid import UUID
 
 
 from app.db import get_db
+from app.deps import Role, has_role, UserInDB
 from app.models import Case, CaseStatus, Document, Category, CategoryType, User
 from app.schemas.common import ResponseEnvelope, make_success_response
 # คุณอาจต้องสร้าง Schema นี้เพิ่มใน app/schemas/insights.py หรือใส่ไว้ในไฟล์นี้ชั่วคราวก็ได้
@@ -72,6 +73,15 @@ class InsightsResponseEnvelope(ResponseEnvelope):
 
 @router.get("/", response_model=InsightsResponseEnvelope)
 def get_insights_data(
+    current_user: Annotated[UserInDB, Depends(has_role([
+        Role.ADMIN,
+        Role.ACCOUNTING,
+        Role.FINANCE,
+        Role.TREASURY,
+        Role.EXECUTIVE,
+        Role.VIEWER,
+        Role.APPROVER,
+    ]))],
     requester_id: Optional[str] = Query(None, alias="user_id"),
     category_id: Optional[UUID] = Query(None),
     category_type: Optional[CategoryType] = Query(None),

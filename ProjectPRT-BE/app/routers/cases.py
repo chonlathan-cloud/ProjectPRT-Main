@@ -67,6 +67,7 @@ class PaginatedCaseAdminResponse(BaseModel):
 
 # --- Helper Functions ---
 PRIVILEGED_CASE_ROLES = [
+    Role.APPROVER,
     Role.FINANCE,
     Role.ACCOUNTING,
     Role.ADMIN,
@@ -350,7 +351,7 @@ async def submit_case(
 @router.post("/{case_id}/approve", response_model=WorkflowResponse)
 async def approve_case(
     case_id: UUID,
-    current_user: Annotated[UserInDB, Depends(has_role([Role.FINANCE, Role.ADMIN, Role.ACCOUNTING]))],
+    current_user: Annotated[UserInDB, Depends(has_role([Role.APPROVER]))],
     db: Session = Depends(get_db)
 ):
     db_case = db.execute(select(Case).filter_by(id=case_id)).scalar_one_or_none()
@@ -442,7 +443,7 @@ async def approve_case(
 async def reject_case(
     case_id: UUID,
     payload: CaseRejectRequest,
-    current_user: Annotated[UserInDB, Depends(has_role([Role.FINANCE, Role.ADMIN, Role.ACCOUNTING]))],
+    current_user: Annotated[UserInDB, Depends(has_role([Role.APPROVER]))],
     db: Session = Depends(get_db)
 ):
     db_case = db.execute(select(Case).filter_by(id=case_id)).scalar_one_or_none()

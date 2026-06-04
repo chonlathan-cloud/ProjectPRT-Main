@@ -11,6 +11,7 @@ class GoogleUser(BaseModel):
     email: EmailStr
     name: str
     position: str | None = None
+    roles: list[str] = Field(default_factory=list)
 
 class GoogleAuthData(BaseModel):
     access_token: str

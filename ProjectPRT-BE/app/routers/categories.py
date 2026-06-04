@@ -7,7 +7,7 @@ from sqlalchemy import select, and_
 
 from app.constants.revenue_income_types import REVENUE_INCOME_TYPE_CODES
 from app.db import get_db
-from app.deps import Role, has_role,UserInDB
+from app.deps import Role, get_current_user, has_role, UserInDB
 from app.models import Category, CategoryType, AuditLog
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
 from app.services.audit import log_audit_event
@@ -19,6 +19,7 @@ router = APIRouter(
 
 @router.get("/revenue-income-types", response_model=List[CategoryResponse])
 async def read_revenue_income_types(
+    current_user: Annotated[UserInDB, Depends(get_current_user)],
     active: bool = True,
     db: Session = Depends(get_db)
 ):
@@ -38,6 +39,7 @@ async def read_revenue_income_types(
 
 @router.get("/", response_model=List[CategoryResponse])
 async def read_categories(
+    current_user: Annotated[UserInDB, Depends(get_current_user)],
     type: Optional[CategoryType] = None,
     active: bool = True,
     db: Session = Depends(get_db)

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, Briefcase, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Lock, User, Briefcase, ArrowRight, ArrowLeft, CheckCircle } from 'lucide-react';
 import { signup } from '../services/api';
 
 interface SignUpFormProps {
@@ -17,6 +17,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUpSuccess, onSwitc
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
@@ -25,6 +26,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUpSuccess, onSwitc
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match.');
@@ -42,7 +44,14 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUpSuccess, onSwitc
       });
 
       if (response.success) {
-        onSignUpSuccess();
+        setSuccessMessage('Account created. Please wait for an admin or approver to approve your access.');
+        setFormData({
+          name: '',
+          position: '',
+          email: '',
+          password: '',
+          confirmPassword: ''
+        });
       } else {
         const errorMessage = response.error?.message || response.message || 'Sign up failed. Please try again.';
         setError(errorMessage);
@@ -78,6 +87,24 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUpSuccess, onSwitc
           </div>
 
           <div className="p-8 space-y-6">
+            {successMessage ? (
+              <div className="space-y-5 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                  <CheckCircle className="h-8 w-8" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Waiting for approval</h2>
+                  <p className="mt-2 text-sm leading-6 text-gray-500">{successMessage}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onSwitchToLogin}
+                  className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-blue-700"
+                >
+                  Back to Login
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               
               <div className="space-y-1">
@@ -208,6 +235,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUpSuccess, onSwitc
                 )}
               </button>
             </form>
+            )}
             
              <div className="mt-4 text-center">
               <button

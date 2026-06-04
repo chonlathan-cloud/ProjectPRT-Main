@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { AdminCaseView } from '../../types';
-import { approveCase, getCases, rejectCase } from '../services/api';
+import { approveCase, getCases, getCurrentUserInfo, rejectCase } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
 import { openDocumentPreview } from '../utils/documentPreview';
 import {
@@ -42,6 +42,10 @@ interface FeedbackState {
   message: string;
 }
 
+const APPROVER_ROLE = 'approver';
+const APPROVAL_AUTHORITY_MESSAGE =
+  'เฉพาะผู้มีสิทธิ์ Approver เท่านั้นที่อนุมัติหรือปฏิเสธรายการได้ หากต้องเปลี่ยนผู้อนุมัติ กรุณาติดต่อผู้สร้างระบบโดยตรง';
+
 const getErrorMessage = (error: unknown, fallback: string) => {
   const responseDetail = (error as {
     response?: { data?: { detail?: unknown } };
@@ -78,6 +82,8 @@ export const AdminApproval: React.FC = () => {
   const [approvalConfirm, setApprovalConfirm] = useState<ApprovalConfirmState | null>(null);
   const [submittingCaseId, setSubmittingCaseId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [currentRoles, setCurrentRoles] = useState<string[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
 
   const loadPendingCases = async (showLoadingState = true) => {
     if (showLoadingState) {
@@ -100,9 +106,41 @@ export const AdminApproval: React.FC = () => {
     }
   };
 
+  const loadCurrentUserRoles = async () => {
+    try {
+      setRolesLoading(true);
+      const currentUser = await getCurrentUserInfo();
+      setCurrentRoles(currentUser.roles);
+    } catch (error) {
+      console.error('Failed to fetch current user roles:', error);
+      setCurrentRoles([]);
+      setFeedback({
+        type: 'error',
+        message: getErrorMessage(error, 'ไม่สามารถตรวจสอบสิทธิ์ผู้อนุมัติได้'),
+      });
+    } finally {
+      setRolesLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadPendingCases();
+    void loadCurrentUserRoles();
   }, []);
+
+  const hasApprovalAuthority = currentRoles.includes(APPROVER_ROLE);
+
+  const guardApprovalAuthority = () => {
+    if (hasApprovalAuthority) {
+      return true;
+    }
+
+    setFeedback({
+      type: 'error',
+      message: APPROVAL_AUTHORITY_MESSAGE,
+    });
+    return false;
+  };
 
   const handleSelectCase = (item: AdminCaseView) => {
     setSelectedCase(item);
@@ -113,6 +151,10 @@ export const AdminApproval: React.FC = () => {
   };
 
   const requestApprove = (caseId: string) => {
+    if (!guardApprovalAuthority()) {
+      return;
+    }
+
     const caseToApprove = cases.find((item) => item.id === caseId) ?? selectedCase;
     if (!caseToApprove) {
       return;
@@ -127,6 +169,11 @@ export const AdminApproval: React.FC = () => {
   };
 
   const handleApprove = async (caseId: string) => {
+    if (!guardApprovalAuthority()) {
+      setApprovalConfirm(null);
+      return;
+    }
+
     const caseToApprove = cases.find((item) => item.id === caseId) ?? selectedCase;
     setApprovalConfirm(null);
     setSubmittingCaseId(caseId);
@@ -190,6 +237,10 @@ export const AdminApproval: React.FC = () => {
   };
 
   const handleReject = async (caseId: string) => {
+    if (!guardApprovalAuthority()) {
+      return;
+    }
+
     const reason = window.prompt('กรุณาระบุเหตุผลที่ไม่อนุมัติ:');
     if (reason === null) {
       return;
@@ -252,7 +303,7 @@ export const AdminApproval: React.FC = () => {
   const isSubmittingSelectedCase = Boolean(
     selectedCase && submittingCaseId === selectedCase.id
   );
-  const previewActions = isShowingApprovedPreview ? null : (
+  const previewActions = isShowingApprovedPreview ? null : hasApprovalAuthority ? (
     <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
@@ -272,6 +323,10 @@ export const AdminApproval: React.FC = () => {
         <XCircle className="h-4 w-4" />
         ปฏิเสธ
       </button>
+    </div>
+  ) : (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500">
+      {rolesLoading ? 'กำลังตรวจสอบสิทธิ์ผู้อนุมัติ...' : APPROVAL_AUTHORITY_MESSAGE}
     </div>
   );
 
@@ -374,7 +429,7 @@ export const AdminApproval: React.FC = () => {
               </h2>
               <div className="mt-1 flex items-center gap-2 text-slate-500">
                 <Clock size={18} />
-                <p>ตรวจสอบและอนุมัติคำขอเบิกจ่าย (Admin Approval)</p>
+                <p>ตรวจสอบและอนุมัติคำขอเบิกจ่าย</p>
               </div>
             </div>
           </div>
@@ -745,35 +800,41 @@ export const AdminApproval: React.FC = () => {
                               </td>
 
                               <td className="whitespace-nowrap px-6 py-5 text-center">
-                                <div className="flex items-center justify-center gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      requestApprove(item.id);
-                                    }}
-                                    disabled={isSubmittingThisRow}
-                                    className="group/btn flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2 font-semibold text-white shadow-lg shadow-emerald-500/20 transition duration-200 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:shadow-none"
-                                  >
-                                    <CheckCircle2 className="h-4 w-4" />
-                                    <span>
-                                      {isSubmittingThisRow ? 'กำลังดำเนินการ...' : 'อนุมัติ'}
-                                    </span>
-                                  </button>
+                                {hasApprovalAuthority ? (
+                                  <div className="flex items-center justify-center gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        requestApprove(item.id);
+                                      }}
+                                      disabled={isSubmittingThisRow}
+                                      className="group/btn flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2 font-semibold text-white shadow-lg shadow-emerald-500/20 transition duration-200 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:shadow-none"
+                                    >
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      <span>
+                                        {isSubmittingThisRow ? 'กำลังดำเนินการ...' : 'อนุมัติ'}
+                                      </span>
+                                    </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void handleReject(item.id);
-                                    }}
-                                    disabled={isSubmittingThisRow}
-                                    className="group/btn flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-6 py-2 font-semibold text-rose-500 transition duration-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-rose-100 disabled:text-rose-300"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                    <span>ปฏิเสธ</span>
-                                  </button>
-                                </div>
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void handleReject(item.id);
+                                      }}
+                                      disabled={isSubmittingThisRow}
+                                      className="group/btn flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-6 py-2 font-semibold text-rose-500 transition duration-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-rose-100 disabled:text-rose-300"
+                                    >
+                                      <XCircle className="h-4 w-4" />
+                                      <span>ปฏิเสธ</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-500">
+                                    {rolesLoading ? 'กำลังตรวจสิทธิ์...' : 'Approver เท่านั้น'}
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );

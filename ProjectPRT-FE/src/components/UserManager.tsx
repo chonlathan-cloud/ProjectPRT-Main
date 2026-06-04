@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Search, Mail, 
   Edit2, Trash2,
-  Loader2, AlertCircle
+  Loader2, AlertCircle,
+  RotateCcw, KeyRound, EyeOff, UserCheck
 } from 'lucide-react';
-import { getUsers, updateUser, updateUserRoles, deleteUser } from '../services/api';
+import { getUsers, updateUser, updateUserRoles, deleteUser, restoreUser, resetUserPassword, approveUser } from '../services/api';
 import { User } from '../../types';
 
 const DEFAULT_ROLES = ['admin', 'accounting', 'finance', 'viewer', 'requester'];
+const SYSTEM_MANAGED_ROLES = new Set(['approver']);
+const isAssignableRole = (role: string) => !SYSTEM_MANAGED_ROLES.has(role);
 
 export const UserManager: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -16,16 +19,22 @@ export const UserManager: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
+  const [isRestoring, setIsRestoring] = useState<string | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isApproving, setIsApproving] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [showInactive]);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getUsers();
+      const data = await getUsers(showInactive);
       setUsers(data);
     } catch (err: any) {
       console.error("Failed to fetch users:", err);
@@ -39,7 +48,7 @@ export const UserManager: React.FC = () => {
     try {
       await updateUser(user.user_id, { name: user.name, position: user.position });
       if (user.roles) {
-        await updateUserRoles(user.user_id, user.roles);
+        await updateUserRoles(user.user_id, user.roles.filter(isAssignableRole));
       }
       setEditingUser(null);
       fetchUsers();
@@ -63,16 +72,70 @@ export const UserManager: React.FC = () => {
     }
   };
 
+  const handleRestoreUser = async (userId: string) => {
+    try {
+      setIsRestoring(userId);
+      await restoreUser(userId);
+      fetchUsers();
+    } catch (err) {
+      console.error("Failed to restore user:", err);
+      alert("ไม่สามารถคืนค่าผู้ใช้งานได้");
+    } finally {
+      setIsRestoring(null);
+    }
+  };
+
+  const handleApproveUser = async (userId: string) => {
+    try {
+      setIsApproving(userId);
+      await approveUser(userId);
+      fetchUsers();
+    } catch (err) {
+      console.error("Failed to approve user:", err);
+      alert("ไม่สามารถอนุมัติผู้ใช้งานได้");
+    } finally {
+      setIsApproving(null);
+    }
+  };
+
+  const openResetPassword = (user: User) => {
+    setResetPasswordUser(user);
+    setNewPassword('');
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordUser) return;
+    if (newPassword.length < 6) {
+      alert("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
+      return;
+    }
+
+    try {
+      setIsResettingPassword(true);
+      await resetUserPassword(resetPasswordUser.user_id, newPassword);
+      setResetPasswordUser(null);
+      setNewPassword('');
+      fetchUsers();
+      alert("ตั้งรหัสผ่านใหม่เรียบร้อยแล้ว");
+    } catch (err) {
+      console.error("Failed to reset password:", err);
+      alert("ไม่สามารถตั้งรหัสผ่านใหม่ได้");
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (user.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (user.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.user_id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const availableRoles = Array.from(new Set([
     ...DEFAULT_ROLES,
     ...users.flatMap((user) => user.roles || [])
-  ]));
+  ])).filter(isAssignableRole);
+  const pendingApprovalCount = users.filter((user) => user.is_active !== false && user.is_approved === false).length;
 
   const toggleRole = (role: string) => {
     if (!editingUser) return;
@@ -128,19 +191,40 @@ export const UserManager: React.FC = () => {
 
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredUsers.map((user) => (
+        {filteredUsers.map((user) => {
+          const isPendingApproval = user.is_active !== false && user.is_approved === false;
+
+          return (
           <div 
             key={user.user_id}
-            className="group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:shadow-xl hover:border-indigo-500/30 transition-all duration-300 relative overflow-hidden"
+            className={`group bg-white dark:bg-slate-900 border rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 relative overflow-hidden ${
+              isPendingApproval
+                ? 'border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/10'
+                : user.is_active === false
+                ? 'border-slate-300 dark:border-slate-700 opacity-75'
+                : 'border-slate-200 dark:border-slate-800 hover:border-indigo-500/30'
+            }`}
           >
             <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button 
-                onClick={() => handleDeleteUser(user.user_id)}
-                disabled={isDeleting === user.user_id}
-                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-              >
-                {isDeleting === user.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              </button>
+              {user.is_active === false ? (
+                <button
+                  onClick={() => handleRestoreUser(user.user_id)}
+                  disabled={isRestoring === user.user_id}
+                  className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                  title="คืนค่าผู้ใช้งาน"
+                >
+                  {isRestoring === user.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleDeleteUser(user.user_id)}
+                  disabled={isDeleting === user.user_id}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  title="ลบผู้ใช้งาน"
+                >
+                  {isDeleting === user.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              )}
             </div>
 
             <div className="flex items-start gap-4">
@@ -202,6 +286,15 @@ export const UserManager: React.FC = () => {
                           {user.position}
                         </span>
                       )}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${
+                        isPendingApproval
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                          : user.is_active === false
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                          : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800/50'
+                      }`}>
+                        {isPendingApproval ? 'รออนุมัติ' : user.is_active === false ? 'ถูกลบ' : 'ใช้งานอยู่'}
+                      </span>
                     </div>
                     {user.roles && user.roles.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
@@ -221,9 +314,27 @@ export const UserManager: React.FC = () => {
             </div>
 
             {!editingUser && (
-              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                {isPendingApproval && (
+                  <button
+                    onClick={() => handleApproveUser(user.user_id)}
+                    disabled={isApproving === user.user_id}
+                    className="text-xs text-amber-600 hover:text-emerald-600 flex items-center gap-1 transition-colors font-bold"
+                  >
+                    {isApproving === user.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                    อนุมัติ
+                  </button>
+                )}
+                <button
+                  onClick={() => openResetPassword(user)}
+                  className="text-xs text-slate-400 hover:text-emerald-600 flex items-center gap-1 transition-colors"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  ตั้งรหัสผ่าน
+                </button>
                 <button 
                   onClick={() => setEditingUser(user)}
+                  disabled={user.is_active === false}
                   className="text-xs text-slate-400 hover:text-indigo-500 flex items-center gap-1 transition-colors"
                 >
                   <Edit2 className="w-3 h-3" />
@@ -232,7 +343,8 @@ export const UserManager: React.FC = () => {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
@@ -247,17 +359,35 @@ export const UserManager: React.FC = () => {
             การจัดการผู้ใช้งาน
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">จัดการสิทธิ์ ข้อมูล และบัญชีผู้ใช้งานในระบบ</p>
+          {pendingApprovalCount > 0 && (
+            <p className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <UserCheck className="h-3.5 w-3.5" />
+              รออนุมัติ {pendingApprovalCount} คน
+            </p>
+          )}
         </div>
         
-        <div className="flex items-center gap-3">
-          <div className="relative group">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
+          <button
+            type="button"
+            onClick={() => setShowInactive((value) => !value)}
+            className={`px-4 py-2.5 border rounded-xl font-bold text-xs transition-colors shadow-sm flex items-center gap-2 ${
+              showInactive
+                ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900 dark:border-white'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <EyeOff className="w-4 h-4" />
+            {showInactive ? 'ซ่อนบัญชีที่ลบ' : 'แสดงบัญชีที่ลบ'}
+          </button>
+          <div className="relative group w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
             <input 
               type="text"
               placeholder="ค้นหาชื่อ, อีเมล หรือรหัส..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full md:w-64 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm"
+              className="pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl w-full sm:w-64 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm"
             />
           </div>
           <button 
@@ -271,6 +401,57 @@ export const UserManager: React.FC = () => {
       </div>
 
       {renderContent()}
+
+      {resetPasswordUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center">
+                <KeyRound className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-black text-slate-800 dark:text-white">ตั้งรหัสผ่านใหม่</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{resetPasswordUser.email}</p>
+              </div>
+            </div>
+
+            <label htmlFor="new-user-password" className="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1">
+              PASSWORD
+            </label>
+            <input
+              id="new-user-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              minLength={6}
+              className="mt-2 w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+              autoFocus
+            />
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setResetPasswordUser(null);
+                  setNewPassword('');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={isResettingPassword}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-colors flex items-center gap-2 disabled:opacity-70"
+              >
+                {isResettingPassword && <Loader2 className="w-4 h-4 animate-spin" />}
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -6,7 +6,7 @@ from sqlalchemy import func, desc, extract
 from datetime import datetime, date
 
 from app.db import get_db
-from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_FINANCE, ROLE_VIEWER
+from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_APPROVER, ROLE_FINANCE, ROLE_VIEWER
 from app.models import Document, DocumentType, Case, Category, CaseStatus, JVLineItem, Attachment, AttachmentType
 from app.services.doc_numbers import generate_document_no
 from app.services import gcs
@@ -28,7 +28,7 @@ async def get_full_dashboard(
     db: Session = Depends(get_db)
 ):
     # 1. Permission Check
-    _, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER])
+    _, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_APPROVER])
     if auth_error:
         return auth_error
 

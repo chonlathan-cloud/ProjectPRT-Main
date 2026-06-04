@@ -144,7 +144,7 @@ The `cases.status` field will adhere to a strict state machine, with all transit
 
 **Allowed Case Statuses:**
 *   `DRAFT`
-*   `SUBMITTED` (Awaiting Finance approval)
+*   `SUBMITTED` (Awaiting Approver approval)
 *   `PS_APPROVED`
 *   `PS_REJECTED`
 *   `CR_ISSUED`
@@ -223,6 +223,6 @@ All sensitive or user-uploaded files will be stored and accessed securely via Go
 * Links a JV Document to multiple `cases` (PVs) to aggregate actual usage vs budget.
 
 ## 4. Workflows
-* **Expense (Standard):** Create Case -> Submit -> Finance Approve (PV Generated) -> Treasury Pay -> Upload Receipt -> Close.
+* **Expense (Standard):** Create Case -> Submit -> Approver Approve (PV Generated) -> Treasury Pay -> Upload Receipt -> Close.
 * **Expense (Over Budget):** ... -> Create New Case (Top-up PV) -> Create JV (Link PV#1 + PV#2) -> Close.
 * **Revenue:** Create RV Case -> Select Income Category & Deposit Account -> Save (RV Generated).

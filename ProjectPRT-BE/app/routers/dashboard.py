@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from app.db import get_db
-from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_EXECUTIVE
+from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_APPROVER, ROLE_VIEWER, ROLE_EXECUTIVE
 from app.models import (
     Document, DocumentType, 
     Case, CaseStatus, 
@@ -48,8 +48,8 @@ async def get_full_dashboard(
     """
 
     # 1. Permission Check
-    # อนุญาต Admin, Accounting, Viewer, Executive
-    _, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_EXECUTIVE])
+    # อนุญาต Admin, Accounting, Viewer, Executive, Approver
+    _, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_EXECUTIVE, ROLE_APPROVER])
     if auth_error:
         # ถ้าไม่มีสิทธิ์ Return Error กลับไป
         return auth_error

@@ -46,6 +46,7 @@ def _case_owner_identifiers(current_user: UserInDB) -> list[str]:
 
 def _can_see_all_cases(current_user: UserInDB) -> bool:
     return any(role in current_user.roles for role in [
+        Role.APPROVER,
         Role.FINANCE,
         Role.ACCOUNTING,
         Role.ADMIN,

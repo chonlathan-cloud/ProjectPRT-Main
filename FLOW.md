@@ -96,9 +96,10 @@ Entry point คือ `ProjectPRT-FE/index.tsx` แล้ว render `App.tsx`
 
 1. ตรวจ token ใน `localStorage` ผ่าน `hasValidAuthSession`
 2. ถ้ายังไม่ login แสดง `LoginForm` หรือ `SignUpForm`
-3. ถ้า URL มี `?documentPreview=...` แสดง `DocumentPreviewPage`
-4. ถ้า login แล้วแสดง layout หลักพร้อม `Sidebar`
-5. เปลี่ยนหน้าโดย `ViewType`
+3. ถ้า login แล้วโหลด role ล่าสุดจาก `GET /api/v1/auth/me`
+4. ถ้า URL มี `?documentPreview=...` แสดง `DocumentPreviewPage` เฉพาะ non-requester-limited user
+5. ถ้า login แล้วแสดง layout หลักพร้อม `Sidebar`
+6. เปลี่ยนหน้าโดย `ViewType`
 
 เมนูหลักใน `Sidebar.tsx`:
 
@@ -112,6 +113,11 @@ Entry point คือ `ProjectPRT-FE/index.tsx` แล้ว render `App.tsx`
 | Approvals | `AdminApproval.tsx` |
 | Document Manager | `DocumentManager.tsx` |
 | User Management | `UserManager.tsx` |
+
+Requester-only user (`roles=["requester"]`) ถูกจำกัด frontend ไว้เฉพาะ:
+
+- `Form`
+- `Document Manager`
 
 ## 4. Auth และ Role Flow
 
@@ -148,20 +154,27 @@ sequenceDiagram
 
 1. `SignUpForm.tsx` ส่ง `POST /api/v1/auth/signup`
 2. Backend สร้าง user ใหม่, hash password, assign role `requester`
-3. Backend ส่ง token กลับมา
-4. Frontend ปัจจุบันยังไม่ได้ auto-login หลัง signup แต่กลับไปหน้า login
+3. Backend ตั้ง `is_approved=false`
+4. Frontend แสดงสถานะรออนุมัติ
+5. `admin` หรือ `approver` อนุมัติผ่านหน้า User Management
+6. หลังอนุมัติ user จึง login ได้
 
 ### Role ที่ใช้ในระบบ
 
 Role หลัก:
 
 - `requester`
+- `approver`
 - `finance`
 - `accounting`
 - `treasury`
 - `admin`
 - `executive`
 - `viewer`
+
+`approver` เป็น role สูงสุดและ inherit สิทธิ์ของ `admin` ทั้งหมด แต่ตัว role `approver` เองเป็น system-managed role สำหรับผู้อนุมัติ 1-2 คนต่อองค์กร และไม่ควรถูกเพิ่ม/ลบผ่านหน้า User Management ปกติ
+
+`requester` ใช้งานได้เฉพาะหน้า `Form` และ `Document Manager`; backend อนุญาตเฉพาะ API ที่จำเป็นสำหรับสร้าง/submit case, upload/list attachment, อ่าน category และค้นหา/list case ของตัวเอง
 
 มีการเช็ค role 2 style:
 
@@ -244,7 +257,7 @@ flowchart TD
    - `pdf_uri=pending-approval`
 10. Case เปลี่ยนเป็น `SUBMITTED`
 11. `AdminApproval.tsx` โหลด `GET /api/v1/cases/?status=SUBMITTED`
-12. ผู้มี role `finance`, `accounting`, `admin` กด approve:
+12. ผู้มี role `approver` กด approve:
    - `POST /api/v1/cases/{case_id}/approve`
 13. Backend ตรวจว่า:
    - Case ต้อง `SUBMITTED`
@@ -438,7 +451,7 @@ Filter สำคัญ:
 
 - กรองตามปีของ `Document.created_at`
 - ตัด status `DRAFT`, `CANCELLED`, `REJECTED`, `SUBMITTED`
-- ใช้ role `admin`, `accounting`, `viewer`
+- ใช้ role `admin`, `accounting`, `viewer`, `approver`
 
 มีอีก endpoint คือ `GET /api/v1/dashboard?year=YYYY` ใน `dashboard.py` แต่ frontend ปัจจุบันไม่ได้เรียก endpoint นี้ใน `Dashboard.tsx`
 
@@ -454,7 +467,7 @@ Filter สำคัญ:
 
 Backend approve:
 
-1. ตรวจ role `finance`, `admin`, `accounting`
+1. ตรวจ role `approver`
 2. ตรวจ status `SUBMITTED`
 3. หา Document ของ Case
 4. หา PS attachment ล่าสุด
@@ -574,22 +587,24 @@ Rule สำคัญ:
 
 ## 17. User Management Flow
 
-หน้า `UserManager.tsx` ใช้สำหรับ admin
+หน้า `UserManager.tsx` ใช้สำหรับ `admin` และ `approver`
 
 Frontend endpoint:
 
 - `GET /api/v1/admin/users`
 - `PATCH /api/v1/admin/users/{user_id}`
+- `POST /api/v1/admin/users/{user_id}/approve`
 - `POST /api/v1/admin/users/{user_id}/roles`
 - `DELETE /api/v1/admin/users/{user_id}`
 
 Backend `admin.py`:
 
-1. ทุก endpoint ใช้ `require_roles(..., [admin])`
-2. List users แสดงเฉพาะ `is_active=true`
-3. Update user แก้ `name`, `position`
-4. Update roles ลบ role เดิมทั้งหมดแล้ว insert ใหม่
-5. Delete คือ soft delete โดย set `is_active=false`
+1. ทุก endpoint ใช้ `require_roles(..., [admin])`; `approver` ผ่านได้เพราะ inherit สิทธิ์ `admin`
+2. List users แสดงเฉพาะ `is_active=true` รวมถึง user ที่ `is_approved=false`
+3. Approve user ตั้ง `is_approved=true`
+4. Update user แก้ `name`, `position`
+5. Update roles ลบ role เดิมทั้งหมดแล้ว insert ใหม่ ยกเว้น system-managed role เช่น `approver`
+6. Delete คือ soft delete โดย set `is_active=false`
 
 ## 18. Build และ Deploy Flow
 
@@ -768,7 +783,7 @@ Local dev:
 7. Upload PS attachment
 8. Submit แล้วสร้าง `PV-YYMM-####`
 9. Case เป็น `SUBMITTED`
-10. Finance/Accounting/Admin approve
+10. Approver approve
 11. Stamp approved PDF
 12. Case เป็น `APPROVED`
 13. Treasury/Admin mark paid

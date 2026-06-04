@@ -5,7 +5,7 @@ export enum ViewType {
   INSIGHTS = 'INSIGHTS',
   PROFIT_LOSS = 'PROFIT_LOSS',
   CHAT_VIEW = 'CHAT_VIEW',
-  ADMIN_APPROVAL = 'ADMIN_APPROVAL', // เพิ่ม Case ใหม่ สำหรับ approval list for documents
+  ADMIN_APPROVAL = 'ADMIN_APPROVAL', // Approval list for documents
   DOCUMENT_MANAGER = 'DOCUMENT_MANAGER',
   USER_MANAGER = 'USER_MANAGER',
 }
@@ -40,6 +40,7 @@ export interface User {
   email: string;
   position?: string;
   is_active?: boolean;
+  is_approved?: boolean;
 }
 
 export interface BankAccount {

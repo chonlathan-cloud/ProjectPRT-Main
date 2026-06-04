@@ -27,9 +27,10 @@ ProjectPRT เป็นระบบบัญชีและเอกสารก
 
 | Role | หน้าที่หลัก |
 | --- | --- |
-| `requester` | สร้าง Case, upload ไฟล์, submit เอกสาร |
-| `finance` | อนุมัติหรือปฏิเสธ Case ที่ submit แล้ว |
-| `accounting` | จัดการ category, อนุมัติบาง flow, ดูข้อมูลบัญชี |
+| `requester` | ใช้เฉพาะหน้า Form และ Document Manager: สร้าง Case, upload ไฟล์, submit เอกสาร, ดู/ค้นหาเอกสารของตัวเอง |
+| `approver` | Role สูงสุด อนุมัติ/ปฏิเสธ Case และทำทุก action ที่ `admin` ทำได้ |
+| `finance` | ตรวจสอบ/ดูรายการด้านการเงินตามสิทธิ์ |
+| `accounting` | จัดการ category, ดูข้อมูลบัญชี |
 | `treasury` | mark payment เป็น paid |
 | `admin` | จัดการ user/role, มีสิทธิ์กว้างสุด |
 | `executive` | ดูภาพรวม dashboard/report |
@@ -38,9 +39,13 @@ ProjectPRT เป็นระบบบัญชีและเอกสารก
 Business rule ด้านสิทธิ์:
 
 - ผู้ใช้ต้อง login ก่อนเรียก API ส่วนใหญ่
-- สมัครสมาชิกใหม่จะได้ role default เป็น `requester`
+- สมัครสมาชิกใหม่จะได้ role default เป็น `requester` และ `is_approved = false`
+- User ที่ `is_approved = false` จะ login หรือใช้งานระบบไม่ได้จนกว่า `admin` หรือ `approver` จะอนุมัติ
 - Google SSO user คนแรก หรือ user ที่ตรงกับ bootstrap admin config จะได้ `admin`
-- Admin จัดการ role ของ user ผ่าน `/api/v1/admin/users/{user_id}/roles`
+- Admin จัดการ role ทั่วไปของ user ผ่าน `/api/v1/admin/users/{user_id}/roles`
+- Role `approver` inherit สิทธิ์ของ `admin` ทั้งหมด
+- Role `approver` เป็น system-managed role สำหรับผู้อนุมัติ 1-2 คนต่อองค์กร ถ้าต้องเพิ่ม/เปลี่ยนผู้อนุมัติให้ติดต่อ system creator โดยตรง
+- User ที่มีเฉพาะ role `requester` ถูกจำกัดให้เข้าได้เฉพาะหน้า `Form` และ `Document Manager`
 - การลบ user เป็น soft delete โดยตั้ง `is_active = false`
 - User ที่ `is_active = false` จะ login หรือใช้งานต่อไม่ได้
 
@@ -161,7 +166,7 @@ Business rules:
 
 Endpoint: `POST /api/v1/cases/{case_id}/approve`
 
-ผู้อนุมัติ: `finance`, `accounting`, หรือ `admin`
+ผู้อนุมัติ: `approver`
 
 Business rules:
 
@@ -185,7 +190,7 @@ Business rules:
 
 Endpoint: `POST /api/v1/cases/{case_id}/reject`
 
-ผู้ปฏิเสธ: `finance`, `accounting`, หรือ `admin`
+ผู้ปฏิเสธ: `approver`
 
 Business rules:
 
@@ -287,14 +292,14 @@ Dashboard summary:
 
 Business rules ของ endpoint `/api/v1/documents`:
 
-- ดูได้โดย `admin`, `accounting`, หรือ `viewer`
+- ดูได้โดย `admin`, `accounting`, `viewer`, หรือ `approver`
 - กรองตามปีของ `Document.created_at`
 - ไม่นับ Case สถานะ `DRAFT`, `CANCELLED`, `REJECTED`, `SUBMITTED`
 - Monthly chart แสดงเฉพาะ PV
 - Activity chart group PV ตาม Category
 - Latest transactions แสดง Document ล่าสุด 5 รายการ
 
-มีอีก endpoint `GET /api/v1/dashboard` ที่ logic ใกล้เคียงกัน แต่ใช้ `VALID_STATUSES = [APPROVED]` และเปิดให้ `executive` ด้วย
+มีอีก endpoint `GET /api/v1/dashboard` ที่ logic ใกล้เคียงกัน แต่ใช้ `VALID_STATUSES = [APPROVED]` และเปิดให้ `executive`/`approver` ด้วย
 
 ข้อสังเกต:
 
@@ -387,16 +392,19 @@ Admin APIs:
 
 - `GET /api/v1/admin/users`
 - `PATCH /api/v1/admin/users/{user_id}`
+- `POST /api/v1/admin/users/{user_id}/approve`
 - `POST /api/v1/admin/users/{user_id}/roles`
 - `DELETE /api/v1/admin/users/{user_id}`
 
 Business rules:
 
-- ทุก endpoint ใช้ได้เฉพาะ `admin`
-- List users แสดงเฉพาะ user ที่ active
+- ทุก endpoint ใช้ได้เฉพาะ `admin` หรือ `approver`
+- List users แสดงเฉพาะ user ที่ active รวมถึง user ที่รออนุมัติ
+- Approve user ตั้ง `is_approved = true` และเปิดให้ user login ได้
 - Update user แก้ `name` และ `position`
 - Update roles replace role เดิมทั้งหมดด้วย role ใหม่
 - Role ที่ส่งมาต้องอยู่ใน set ที่ระบบรองรับ
+- Role `approver` ไม่สามารถเพิ่ม/ลบผ่าน endpoint นี้ เพราะเป็น system-managed role
 - Delete user คือ soft delete โดย set `is_active = false`
 
 ## 14. Search และ Document Manager
@@ -413,8 +421,9 @@ Business rules:
 
 Case visibility:
 
-- Role ที่เห็นทุก Case: `finance`, `accounting`, `admin`, `executive`, `treasury`
+- Role ที่เห็นทุก Case: `approver`, `finance`, `accounting`, `admin`, `executive`, `treasury`
 - Requester เห็นเฉพาะ Case ของตัวเอง
+- Requester-only user ใช้ Document Manager ได้ครบสำหรับเอกสารที่ตัวเองมีสิทธิ์เห็น แต่ไม่มีสิทธิ์ approve/reject, dashboard, insights, profit/loss, chat หรือ user management
 
 ## 15. Audit Log
 
@@ -500,7 +509,7 @@ Transition ที่มีใน spec เดิมแต่ไม่ใช่ fl
 3. Upload ใบ ปส
 4. ระบบสร้าง Case `DRAFT`
 5. Submit แล้วระบบสร้างเลข `PV-YYMM-####` และ status `SUBMITTED`
-6. Finance/Accounting/Admin approve
+6. Approver approve
 7. ระบบ stamp PDF และ status เป็น `APPROVED`
 8. Treasury mark paid แล้ว status เป็น `PAID`
 9. Requester/ผู้เกี่ยวข้อง upload receipt
@@ -522,4 +531,3 @@ Transition ที่มีใน spec เดิมแต่ไม่ใช่ fl
 3. ระบบสร้างเลข `JV-YYMM-####`
 4. ระบบสร้าง JV line items
 5. ระบบ close ทุก Case ที่ถูก link
-

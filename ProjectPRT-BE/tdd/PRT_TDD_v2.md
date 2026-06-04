@@ -56,8 +56,10 @@ Data is stored in two parts:
     *   Creates a Case from Chat or a Form.
     *   Uploads attachments.
     *   Submits settlement information (actual amount/receipts) → moves to "Awaiting Accounting to issue DB" status.
-*   **Finance**
+*   **Approver**
     *   Approves/Rejects PS.
+    *   This is a system-managed role for 1-2 approval authorities per organization.
+*   **Finance**
     *   Views cases based on their status.
 *   **Accounting**
     *   Manages Categories (Create/Deactivate/Update mapping).
@@ -161,7 +163,7 @@ Used for:
 
 **7.1 Case Status**
 *   `DRAFT`
-*   `SUBMITTED` (Awaiting Finance)
+*   `SUBMITTED` (Awaiting Approver)
 *   `PS_APPROVED` / `PS_REJECTED`
 *   `CR_ISSUED`
 *   `PAID`
@@ -283,7 +285,7 @@ Used for:
 *   `GET /api/cases/{id}`
 
 **11.3 Workflow APIs**
-*   `POST /api/cases/{id}/ps/approve` (Finance)
+*   `POST /api/cases/{id}/ps/approve` (Approver)
 *   `POST /api/cases/{id}/cr/issue` (Accounting)
 *   `POST /api/cases/{id}/payment` (Treasury)
 *   `POST /api/cases/{id}/settlement/submit` (Requester)

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import logging
 
 from app.db import get_db
-from app.deps import get_current_user
+from app.deps import Role, has_role
 from app.services.chat_agent import PRTChatAgent
 
 router = APIRouter(
@@ -23,7 +23,15 @@ chat_agent = PRTChatAgent()
 @router.post("")
 async def chat_endpoint(
     payload: ChatRequest,
-    current_user = Depends(get_current_user), # บังคับ Login
+    current_user = Depends(has_role([
+        Role.ADMIN,
+        Role.ACCOUNTING,
+        Role.FINANCE,
+        Role.TREASURY,
+        Role.EXECUTIVE,
+        Role.VIEWER,
+        Role.APPROVER,
+    ])),
     db: Session = Depends(get_db)
 ):
     try:

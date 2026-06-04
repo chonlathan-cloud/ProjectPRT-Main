@@ -15,7 +15,26 @@ ROLE_TREASURY = "treasury"    # <--- เพิ่ม
 ROLE_REQUESTER = "requester"
 ROLE_EXECUTIVE = "executive"  # <--- เพิ่ม (ตัวต้นเหตุ Error)
 ROLE_VIEWER = "viewer"
-ALL_ROLES = {ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_FINANCE, ROLE_TREASURY, ROLE_REQUESTER, ROLE_EXECUTIVE, ROLE_VIEWER}
+ROLE_APPROVER = "approver"
+SYSTEM_MANAGED_ROLES = {ROLE_APPROVER}
+ALL_ROLES = {
+    ROLE_ADMIN,
+    ROLE_ACCOUNTANT,
+    ROLE_FINANCE,
+    ROLE_TREASURY,
+    ROLE_REQUESTER,
+    ROLE_EXECUTIVE,
+    ROLE_VIEWER,
+    ROLE_APPROVER,
+}
+ASSIGNABLE_ROLES = ALL_ROLES - SYSTEM_MANAGED_ROLES
+
+
+def get_effective_roles(roles: List[str]) -> set[str]:
+    effective_roles = set(roles)
+    if ROLE_APPROVER in effective_roles:
+        effective_roles.add(ROLE_ADMIN)
+    return effective_roles
 
 
 def get_current_user(db: Session, request: Request) -> Tuple[User | None, JSONResponse | None]:
@@ -53,6 +72,15 @@ def get_current_user(db: Session, request: Request) -> Tuple[User | None, JSONRe
                 details={},
             ),
         )
+    if hasattr(user, "is_approved") and not user.is_approved:
+        return None, JSONResponse(
+            status_code=403,
+            content=make_error_response(
+                code="PENDING_APPROVAL",
+                message="User is waiting for approval",
+                details={},
+            ),
+        )
     return user, None
 
 
@@ -66,7 +94,7 @@ def require_roles(db: Session, request: Request, allowed_roles: List[str]):
         return None, auth_error
     if allowed_roles:
         roles = get_current_roles(db, user.id)
-        if not set(roles).intersection(set(allowed_roles)):
+        if not get_effective_roles(roles).intersection(set(allowed_roles)):
             return None, JSONResponse(
                 status_code=403,
                 content=make_error_response(
