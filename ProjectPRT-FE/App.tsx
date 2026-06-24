@@ -1,0 +1,129 @@
+
+import React, { useState, useEffect } from 'react';
+import { Sidebar } from './src/components/Sidebar';
+import { Dashboard } from './src/components/Dashboard';
+import { ChatView } from './src/components/ChatView';
+import { LoginForm } from './src/components/LoginForm';
+import { SignUpForm } from './src/components/SignUpForm';
+import { Form } from './src/components/Form';
+import { Insights } from './src/components/Insights';
+import { ViewType } from './types';
+import  AdminApproval  from './src/components/AdminApproval';
+import { ProfitLoss } from './src/components/ProfitLoss';
+import { DocumentManager } from './src/components/DocumentManager';
+import { UserManager } from './src/components/UserManager';
+import { DocumentPreviewPage } from './src/components/DocumentPreviewPage';
+import { AUTH_SESSION_EXPIRED_EVENT, clearAuthSession, hasValidAuthSession } from './src/services/auth';
+
+const App: React.FC = () => {
+  const previewId = new URLSearchParams(window.location.search).get('documentPreview');
+  const [isAuthenticated, setIsAuthenticated] = useState(() => hasValidAuthSession());
+  const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isSigningUp, setIsSigningUp] = useState(false);
+
+  useEffect(() => {
+    // Default to light mode unless the user explicitly saved dark mode.
+    const savedTheme = localStorage.getItem('theme');
+
+    if (savedTheme === 'dark') {
+      setIsDarkMode(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setIsAuthenticated(false);
+      setCurrentView(ViewType.DASHBOARD);
+      setIsSigningUp(false);
+    };
+
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+
+    return () => {
+      window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setIsAuthenticated(false);
+    setCurrentView(ViewType.DASHBOARD);
+    setIsSigningUp(false);
+  };
+
+  const renderView = () => {
+    switch (currentView) {
+      case ViewType.DASHBOARD:
+        return <Dashboard isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
+      case ViewType.CHAT_VIEW:
+        return <ChatView />;
+      case ViewType.FORM:
+        return <Form />;
+      case ViewType.INSIGHTS:
+        return <Insights />;
+      case ViewType.ADMIN_APPROVAL:
+        return <AdminApproval />;
+      case ViewType.PROFIT_LOSS:
+         return <ProfitLoss />;
+      case ViewType.DOCUMENT_MANAGER:
+         return <DocumentManager />;
+      case ViewType.USER_MANAGER:
+         return <UserManager />;
+      default:
+        return (
+          <div className="flex items-center justify-center h-full">
+            <h2 className="text-2xl text-gray-400">Section "{currentView}" is coming soon...</h2>
+          </div>
+        );
+    }
+  };
+
+  if (!isAuthenticated) {
+    if (isSigningUp) {
+      return (
+        <SignUpForm 
+          onSwitchToLogin={() => setIsSigningUp(false)} 
+          onSignUpSuccess={() => setIsSigningUp(false)} 
+        />
+      );
+    }
+    return (
+      <LoginForm 
+        onLogin={handleLogin} 
+        onSwitchToSignUp={() => setIsSigningUp(true)} 
+      />
+    );
+  }
+
+  if (previewId) {
+    return <DocumentPreviewPage previewId={previewId} />;
+  }
+
+  return (
+    <div className="flex min-h-screen bg-gray-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      <Sidebar activeView={currentView} onViewChange={setCurrentView} onLogout={handleLogout} />
+      <main className="flex-1 overflow-auto">
+        {renderView()}
+      </main>
+    </div>
+  );
+};
+
+export default App;
