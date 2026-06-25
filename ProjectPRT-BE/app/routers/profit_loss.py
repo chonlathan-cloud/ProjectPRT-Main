@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Annotated, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.constants.revenue_income_types import REVENUE_INCOME_TYPES
 from app.db import get_db
+from app.deps import Role, has_role, UserInDB
 from app.models import Case, CaseStatus, Category, CategoryType
 from app.schemas.common import ResponseEnvelope, make_success_response
 
@@ -175,6 +176,15 @@ def _get_revenue_income_type_totals(
 
 @router.get("", response_model=ProfitLossEnvelope)
 def get_profit_loss_data(
+    current_user: Annotated[UserInDB, Depends(has_role([
+        Role.ADMIN,
+        Role.ACCOUNTING,
+        Role.FINANCE,
+        Role.TREASURY,
+        Role.EXECUTIVE,
+        Role.VIEWER,
+        Role.APPROVER,
+    ]))],
     year: int = Query(..., description="B.E. year (e.g., 2565)"),
     db: Session = Depends(get_db)
 ):
@@ -190,6 +200,15 @@ def get_profit_loss_data(
 
 @router.get("/revenue-income-types", response_model=RevenueIncomeTypeEnvelope)
 def get_revenue_income_type_report(
+    current_user: Annotated[UserInDB, Depends(has_role([
+        Role.ADMIN,
+        Role.ACCOUNTING,
+        Role.FINANCE,
+        Role.TREASURY,
+        Role.EXECUTIVE,
+        Role.VIEWER,
+        Role.APPROVER,
+    ]))],
     year: int = Query(..., description="B.E. year (e.g., 2565)"),
     db: Session = Depends(get_db)
 ):

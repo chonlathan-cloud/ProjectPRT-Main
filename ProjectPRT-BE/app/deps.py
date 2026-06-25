@@ -18,18 +18,37 @@ class Role(str, enum.Enum):
     TREASURY = "treasury"
     ADMIN = "admin"
     EXECUTIVE = "executive"
+    VIEWER = "viewer"
+    APPROVER = "approver"
 
 # OAuth2 Scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # User Model for Dependency Injection
 class UserInDB:
-    def __init__(self, username: str, roles: List[Role], id: str = None, name: str = None, email: str = None):
+    def __init__(
+        self,
+        username: str,
+        roles: List[Role],
+        id: str = None,
+        name: str = None,
+        email: str = None,
+        google_sub: str = None,
+    ):
         self.id = id
         self.username = username
         self.roles = roles
         self.name = name
         self.email = email
+        self.google_sub = google_sub
+
+
+def get_effective_roles(roles: List[Role]) -> set[Role]:
+    effective_roles = set(roles)
+    if Role.APPROVER in effective_roles:
+        effective_roles.add(Role.ADMIN)
+    return effective_roles
+
 
 # --- Real Implementation: Validate JWT & Fetch from DB ---
 async def get_current_user(
@@ -57,6 +76,14 @@ async def get_current_user(
         raise credentials_exception
     if hasattr(user, "is_active") and not user.is_active:
         raise credentials_exception
+    if hasattr(user, "is_approved") and not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "User is waiting for approval",
+                "code": "PENDING_APPROVAL",
+            },
+        )
 
     # 3. Fetch Roles from DB
     user_roles = db.execute(select(UserRole.role).filter_by(user_id=user.id)).scalars().all()
@@ -69,23 +96,23 @@ async def get_current_user(
         except ValueError:
             pass # Ignore invalid roles in DB
 
-    # --- แก้ไขตรงนี้: เพิ่ม fallback ถ้า google_sub และ email เป็น None ให้ใช้ id แทน ---
-    # ใช้ค่าแรกที่ไม่ใช่ว่าง: google_sub -> email -> user.id
-    username_val = user.google_sub or user.email or str(user.id)
+    username_val = user.email or str(user.id)
     
     return UserInDB(
         username=username_val,
         roles=roles_enum,
         id=str(user.id),
         name=user.name,
-        email=user.email
+        email=user.email,
+        google_sub=user.google_sub,
     )
 
 
 def has_role(required_roles: List[Role]):
     def role_checker(current_user: Annotated[UserInDB, Depends(get_current_user)]):
         # Check if user has ANY of the required roles
-        if not any(role in current_user.roles for role in required_roles):
+        effective_roles = get_effective_roles(current_user.roles)
+        if not any(role in effective_roles for role in required_roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={

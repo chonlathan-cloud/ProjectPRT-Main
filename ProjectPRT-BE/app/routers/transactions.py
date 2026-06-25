@@ -71,7 +71,7 @@ async def create_transaction(
             amount=payload.amount,
             occurred_at=occurred_date,
             note=payload.note,
-            created_by=user.google_sub,
+            created_by=user.email or user.google_sub or str(user.id),
         )
         db.add(db_tx)
         db.commit()

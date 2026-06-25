@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, extract, select, case as sql_case
+from sqlalchemy import String, cast, func, desc, extract, or_, select, case as sql_case
 from datetime import datetime
 from typing import List, Optional
 
 from app.db import get_db
-from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_EXECUTIVE
+from app.rbac import require_roles, ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_APPROVER, ROLE_VIEWER, ROLE_EXECUTIVE
 from app.models import (
     Document, DocumentType, 
     Case, CaseStatus, 
@@ -27,6 +27,14 @@ router = APIRouter(
     tags=["Dashboard"],
 )
 
+
+def _case_user_join_condition():
+    return or_(
+        Case.requester_id == User.email,
+        Case.requester_id == User.google_sub,
+        Case.requester_id == cast(User.id, String),
+    )
+
 @router.get("", response_model=DashboardResponse)
 async def get_full_dashboard(
     request: Request, 
@@ -40,8 +48,8 @@ async def get_full_dashboard(
     """
 
     # 1. Permission Check
-    # อนุญาต Admin, Accounting, Viewer, Executive
-    _, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_EXECUTIVE])
+    # อนุญาต Admin, Accounting, Viewer, Executive, Approver
+    _, auth_error = require_roles(db, request, [ROLE_ADMIN, ROLE_ACCOUNTANT, ROLE_VIEWER, ROLE_EXECUTIVE, ROLE_APPROVER])
     if auth_error:
         # ถ้าไม่มีสิทธิ์ Return Error กลับไป
         return auth_error
@@ -146,7 +154,7 @@ async def get_full_dashboard(
         select(Document, Case, Category, User)
         .join(Case, Document.case_id == Case.id)
         .outerjoin(Category, Case.category_id == Category.id) # Outer join กันพลาดถ้าไม่มี Category
-        .outerjoin(User, Case.requester_id == User.email)    # Join User เพื่อเอาชื่อคนขอเบิก
+        .outerjoin(User, _case_user_join_condition())
         .where(
             Case.status.in_(VALID_STATUSES),
             extract('year', Document.created_at) == year
@@ -175,7 +183,7 @@ async def get_full_dashboard(
         
         # จัดการ Null Safety
         cat_name = category.name_th if category else "General"
-        initial = category.name_en[0].upper() if (category and category.name_en) else "D"
+        initial = doc.doc_type.value[0].upper() if doc.doc_type else "D"
         requester_name = user.name if user else (case_obj.requester_id or "Unknown")
 
         tx_list.append(TransactionItem(

@@ -44,6 +44,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onSwitchToSignUp 
         // Sometimes 401 response has a message
         const msg = err.response.data?.error?.message || err.response.data?.message || 'Invalid email or password.';
         setError(msg);
+      } else if (err.response?.status === 403) {
+        const msg = err.response.data?.error?.message || err.response.data?.message || 'Your account cannot access the system yet.';
+        setError(msg);
       } else if (err.response?.data?.message) {
          setError(err.response.data.message);
       } else {

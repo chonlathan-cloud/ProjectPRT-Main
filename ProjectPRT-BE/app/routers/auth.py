@@ -30,6 +30,10 @@ router = APIRouter(
 )
 
 
+def _get_user_roles(db: Session, user_id) -> list[str]:
+    return [role for (role,) in db.query(UserRole.role).filter(UserRole.user_id == user_id).all()]
+
+
 # --- 1. SIGN UP ENDPOINT ---
 @router.post("/signup", response_model=UserAuthResponse)
 async def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
@@ -50,6 +54,7 @@ async def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
         email=payload.email,
         name=payload.name,
         position=payload.position,
+        is_approved=False,
         hashed_password=Hasher.get_password_hash(payload.password),
         # google_sub เป็น None
     )
@@ -62,12 +67,15 @@ async def signup(payload: UserSignupRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    # Auto-login: สร้าง Token ส่งกลับไปเลย
-    access_token = create_access_token(sub=str(new_user.id), email=new_user.email, name=new_user.name)
-    
     data = GoogleAuthData(
-        access_token=access_token,
-        user=GoogleUser(user_id=str(new_user.id), email=new_user.email, name=new_user.name, position=new_user.position)
+        access_token="",
+        user=GoogleUser(
+            user_id=str(new_user.id),
+            email=new_user.email,
+            name=new_user.name,
+            position=new_user.position,
+            roles=_get_user_roles(db, new_user.id),
+        )
     )
     return make_success_response(data.model_dump())
 
@@ -94,13 +102,27 @@ async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
                 message="User is disabled"
             )
         )
+    if hasattr(user, "is_approved") and not user.is_approved:
+        return JSONResponse(
+            status_code=403,
+            content=make_error_response(
+                code="PENDING_APPROVAL",
+                message="Your account is waiting for admin approval"
+            )
+        )
 
     # สร้าง Token
     access_token = create_access_token(sub=str(user.id), email=user.email, name=user.name)
 
     data = GoogleAuthData(
         access_token=access_token,
-        user=GoogleUser(user_id=str(user.id), email=user.email, name=user.name, position=user.position)
+        user=GoogleUser(
+            user_id=str(user.id),
+            email=user.email,
+            name=user.name,
+            position=user.position,
+            roles=_get_user_roles(db, user.id),
+        )
     )
     return make_success_response(data.model_dump())
 
@@ -125,25 +147,26 @@ async def auth_google(payload: GoogleAuthRequest, db: Session = Depends(get_db))
             ),
         )
 
-    user_id = id_info.get("sub")
+    google_sub = id_info.get("sub")
     email = id_info.get("email")
     name = id_info.get("name") or email
 
     # Upsert user
-    db_user = db.query(User).filter(User.google_sub == user_id).first()
+    db_user = db.query(User).filter(User.google_sub == google_sub).first()
     is_first_user = db.query(User).count() == 0
     make_admin = False
     if is_first_user:
         make_admin = True
-    if settings.BOOTSTRAP_ADMIN_SUB and settings.BOOTSTRAP_ADMIN_SUB == user_id:
+    if settings.BOOTSTRAP_ADMIN_SUB and settings.BOOTSTRAP_ADMIN_SUB == google_sub:
         make_admin = True
 
     if not db_user:
         db_user = User(
             id=uuid.uuid4(),
-            google_sub=user_id,
+            google_sub=google_sub,
             email=email,
             name=name,
+            is_approved=make_admin,
         )
         db.add(db_user)
         db.flush()
@@ -161,20 +184,40 @@ async def auth_google(payload: GoogleAuthRequest, db: Session = Depends(get_db))
         db_user.email = email
         db_user.name = name
         if make_admin:
+            db_user.is_approved = True
             has_admin = db.query(UserRole).filter(UserRole.user_id == db_user.id, UserRole.role == ROLE_ADMIN).first()
             if not has_admin:
                 db.add(UserRole(user_id=db_user.id, role=ROLE_ADMIN))
+        if hasattr(db_user, "is_approved") and not db_user.is_approved:
+            return JSONResponse(
+                status_code=403,
+                content=make_error_response(
+                    code="PENDING_APPROVAL",
+                    message="Your account is waiting for admin approval"
+                )
+            )
     db.commit()
     db.refresh(db_user)
 
-    access_token = create_access_token(sub=user_id, email=email, name=name)
+    if hasattr(db_user, "is_approved") and not db_user.is_approved:
+        return JSONResponse(
+            status_code=403,
+            content=make_error_response(
+                code="PENDING_APPROVAL",
+                message="Your account is waiting for admin approval"
+            )
+        )
+
+    access_token = create_access_token(sub=str(db_user.id), email=email, name=name)
 
     data = GoogleAuthData(
         access_token=access_token,
         user=GoogleUser(
-            user_id=user_id,
+            user_id=str(db_user.id),
             email=email,
             name=name,
+            position=db_user.position,
+            roles=_get_user_roles(db, db_user.id),
         ),
     )
     return make_success_response(data.model_dump())

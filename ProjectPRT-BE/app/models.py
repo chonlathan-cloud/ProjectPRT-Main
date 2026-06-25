@@ -214,6 +214,7 @@ class User(Base):
     name = Column(String, nullable=True)
     position = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_approved = Column(Boolean, default=True, nullable=False)
     hashed_password = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")

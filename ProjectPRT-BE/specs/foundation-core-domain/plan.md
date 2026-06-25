@@ -51,7 +51,7 @@ The following constraints must be strictly adhered to throughout implementation:
 *   Users can authenticate securely with the system.
 *   Roles can be assigned to users.
 *   A generic RBAC middleware or decorator is implemented and integrated into the API framework.
-*   Access to *at least one* example endpoint for each role (e.g., Requester can create a case, Finance can approve a PS) is correctly restricted/permitted according to the RBAC matrix.
+*   Access to *at least one* example endpoint for each role (e.g., Requester can create a case, Approver can approve a PS) is correctly restricted/permitted according to the RBAC matrix.
 *   Attempts to access unauthorized resources result in a `403 Forbidden` error.
 *   Unit tests for authentication and RBAC logic pass successfully.
 
@@ -68,7 +68,7 @@ The following constraints must be strictly adhered to throughout implementation:
     *   `POST /api/cases`: Create a new case in `DRAFT` status, ensuring `category_id` maps to a valid `account_code` and that no other `CR` or `DB` documents exist for this case (initial constraint check).
 *   **Case Submission API (`Requester`):**
     *   `POST /api/cases/{id}/submit`: Move a `DRAFT` case to `SUBMITTED` status.
-*   **PS Approval/Rejection APIs (`Finance`):**
+*   **PS Approval/Rejection APIs (`Approver`):**
     *   `POST /api/cases/{id}/ps/approve`: Create a `documents` entry for `doc_type=PS` and transition case status to `PS_APPROVED`.
     *   `POST /api/cases/{id}/ps/reject`: Transition case status to `PS_REJECTED`.
 *   **CR Issuance API (`Accounting`):**
@@ -143,7 +143,7 @@ The following constraints must be strictly adhered to throughout implementation:
     5.  As `Accounting`, creates and activates a `Category`.
     6.  As `Requester`, creates a `Case`.
     7.  As `Requester`, submits the `Case`.
-    8.  As `Finance`, approves the `PS` (document generated, status updated).
+    8.  As `Approver`, approves the `PS` (document generated, status updated).
     9.  As `Accounting`, issues the `CR` (document generated, `UNIQUE(case_id, doc_type)` enforced, status updated).
     10. As `Treasury`, disburses payment (payment recorded, status updated).
     11. As `Requester`, submits settlement (status updated).

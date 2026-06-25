@@ -139,8 +139,14 @@ export interface AuthResponse {
       email: string;
       name: string;
       position?: string;
+      roles?: string[];
     };
   };
+}
+
+export interface CurrentUserInfo {
+  username: string;
+  roles: string[];
 }
 
 // Interceptor to handle HTML responses (Proxy failure)
@@ -196,6 +202,16 @@ export const signup = async (payload: SignupPayload): Promise<AuthResponse> => {
   const response = await api.post('/auth/signup', payload);
   return response.data;
 }
+
+export const getCurrentUserInfo = async (): Promise<CurrentUserInfo> => {
+  const response = await api.get('/auth/me');
+  const data = response.data?.data || response.data;
+
+  return {
+    username: data?.username || '',
+    roles: Array.isArray(data?.roles) ? data.roles.map(String) : [],
+  };
+};
 
 export const getDashboardData = async (year: number): Promise<DashboardData> => {
   const response = await api.get(`/documents?year=${year}`);
@@ -268,17 +284,18 @@ export const rejectCase = async (caseId: string, reason: string = ""): Promise<W
 };
 
 // Fetch Users
-export const getUsers = async (): Promise<User[]> => {
-  const response = await api.get('/admin/users'); // Assuming this endpoint based on auth context
+export const getUsers = async (includeInactive = false): Promise<User[]> => {
+  const response = await api.get(`/admin/users${includeInactive ? '?include_inactive=true' : ''}`);
   const data = Array.isArray(response.data) ? response.data : (response.data.data || []);
   return data.map((u: any) => ({
     user_id: u.user_id,
-    requester_id: u.google_sub ?? u.email ?? u.user_id,
+    requester_id: u.user_id,
     roles: Array.isArray(u.roles) ? u.roles : [],
     name: u.name ?? u.email,
     email: u.email,
     position: u.position,
     is_active: u.is_active,
+    is_approved: u.is_approved,
   }));
 };
 
@@ -291,6 +308,24 @@ export const updateUser = async (userId: string, payload: { name?: string; posit
 // Update User Roles
 export const updateUserRoles = async (userId: string, roles: string[]): Promise<any> => {
   const response = await api.post(`/admin/users/${userId}/roles`, { roles });
+  return response.data;
+};
+
+// Restore User
+export const restoreUser = async (userId: string): Promise<any> => {
+  const response = await api.post(`/admin/users/${userId}/restore`);
+  return response.data;
+};
+
+// Approve Pending User
+export const approveUser = async (userId: string): Promise<any> => {
+  const response = await api.post(`/admin/users/${userId}/approve`);
+  return response.data;
+};
+
+// Reset User Password
+export const resetUserPassword = async (userId: string, password: string): Promise<any> => {
+  const response = await api.post(`/admin/users/${userId}/reset-password`, { password });
   return response.data;
 };
 
@@ -332,6 +367,22 @@ export const getInsights = async (requesterId?: string, month?: number, year?: n
 export const getCaseAttachments = async (caseId: string): Promise<CaseAttachmentFile[]> => {
   const response = await api.get(`/files/${caseId}/list`);
   return Array.isArray(response.data) ? response.data : (response.data.data || []);
+};
+
+export const getCaseAttachmentContent = async (
+  caseId: string,
+  attachmentType: string = 'PS'
+): Promise<ArrayBuffer> => {
+  const files = await getCaseAttachments(caseId);
+  const file = files.find((item) => item.type === attachmentType);
+  if (!file?.url) {
+    throw new Error(`No ${attachmentType} attachment found for this case.`);
+  }
+
+  const response = await axios.get<ArrayBuffer>(file.url, {
+    responseType: 'arraybuffer',
+  });
+  return response.data;
 };
 
 // Search Documents by Doc No (for JV Consolidation)

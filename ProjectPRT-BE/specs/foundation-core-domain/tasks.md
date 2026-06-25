@@ -165,13 +165,13 @@ This document breaks down the implementation plan for the PRT Software Accountin
 *   Unit: Test submission of a non-DRAFT case fails.
 *   Unit: Test RBAC for submission (e.g., Requester cannot submit another user's case).
 
-### Task 3.5: PS Approval/Rejection APIs (`Finance`)
-**Objective:** Implement APIs for Finance to approve or reject a `SUBMITTED` case, creating a PS document on approval.
+### Task 3.5: PS Approval/Rejection APIs (`Approver`)
+**Objective:** Implement APIs for Approver to approve or reject a `SUBMITTED` case, creating a PS document on approval.
 **Acceptance Criteria:**
-*   `POST /api/cases/{id}/ps/approve` endpoint is implemented and accessible by `Finance`/`Admin` roles.
+*   `POST /api/cases/{id}/ps/approve` endpoint is implemented and accessible by `Approver` role.
 *   It validates that the case exists and is in `SUBMITTED` status.
 *   On approval, a `documents` entry for `doc_type=PS` is created (using `generate_doc_no`), and `cases.status` is updated to `PS_APPROVED`.
-*   `POST /api/cases/{id}/ps/reject` endpoint is implemented and accessible by `Finance`/`Admin` roles. `cases.status` is updated to `PS_REJECTED`.
+*   `POST /api/cases/{id}/ps/reject` endpoint is implemented and accessible by `Approver` role. `cases.status` is updated to `PS_REJECTED`.
 **Dependencies:** Task 1.4, Task 2.2, Task 3.2, Task 3.4
 **Test Requirements:**
 *   Unit: Test successful PS approval/rejection.
@@ -250,7 +250,7 @@ This document breaks down the implementation plan for the PRT Software Accountin
 ### Task 3.11: Get Case Details API (`GET /api/cases/{id}`)
 **Objective:** Implement an API to retrieve comprehensive details of a specific case, including all associated documents, payments, and attachments.
 **Acceptance Criteria:**
-*   `GET /api/cases/{id}` endpoint is implemented and accessible by all roles who have access to the case (e.g., if requester owns it, if finance approved it, etc. - a simplified initial RBAC can be 'any authenticated user').
+*   `GET /api/cases/{id}` endpoint is implemented and accessible by all roles who have access to the case (e.g., if requester owns it, if approver approved it, etc. - a simplified initial RBAC can be 'any authenticated user').
 *   It returns the case object along with its related `documents`, `payments`, and `attachments`.
 *   Handles cases where no related entities exist gracefully.
 **Dependencies:** All previous tasks in Phase 3
