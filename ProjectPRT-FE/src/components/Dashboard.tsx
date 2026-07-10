@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MoreHorizontal, Wallet, TrendingUp, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, FileText, Loader2 } from 'lucide-react';
+import { Search, MoreHorizontal, Wallet, TrendingUp, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, FileText, Loader2, ChevronDown } from 'lucide-react';
 import  { getDashboardData, DashboardData, getCaseAttachments } from '../services/api';
 import AttachmentPreviewPanel from './AttachmentPreviewPanel';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie
+  PieChart, Pie, Legend
 } from 'recharts';
 
 interface DashboardProps {
@@ -38,6 +38,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
   const [activeCard, setActiveCard] = useState<'expenses' | 'income' | 'balance' | null>(null);
   const [selectedYear, setSelectedYear] = useState<number>(2025);
   const [selectedTransaction, setSelectedTransaction] = useState<DashboardTransaction | null>(null);
+  const [selectedPieType, setSelectedPieType] = useState<'activity' | 'summary'>('activity');
+  const [isPieDropdownOpen, setIsPieDropdownOpen] = useState(false);
 
   // Connect to Backend
   useEffect(() => {
@@ -163,6 +165,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
     }
     return `${baseStyle} bg-white border-slate-100 dark:bg-slate-900 dark:border-slate-800`;
   };
+
+  const summaryPieData = [
+    { name: 'Income', value: data.summary.income, fill: '#10b981' },
+    { name: 'Expenses', value: data.summary.expenses, fill: '#ef4444' },
+    { name: 'Balance', value: Math.max(0, data.summary.balance), fill: '#3b82f6' }
+  ].filter(item => item.value > 0);
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
@@ -307,35 +315,141 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDarkMode, toggleTheme })
           </div>
         </div>
 
-        {/* Activity Chart */}
+        {/* Activity / Summary Chart */}
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-sm border border-slate-100 dark:border-slate-800">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white">Activity</h2>
+          <div className="flex justify-between items-center mb-8 relative">
+            <div className="relative">
+              <button
+                onClick={() => setIsPieDropdownOpen(!isPieDropdownOpen)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-2xl border border-slate-100 dark:border-slate-800 font-bold text-sm transition-all duration-200 active:scale-95 shadow-sm"
+              >
+                <span>{selectedPieType === 'activity' ? 'Expense ratio' : 'Income, Expenses, Balance'}</span>
+                <ChevronDown size={16} className={`text-slate-500 transition-transform duration-200 ${isPieDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isPieDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setIsPieDropdownOpen(false)}
+                  />
+                  <div className="absolute left-0 mt-2 w-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-xl py-2 z-20 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button
+                      onClick={() => {
+                        setSelectedPieType('activity');
+                        setIsPieDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors flex items-center justify-between ${
+                        selectedPieType === 'activity'
+                          ? 'bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50/50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>Expense ratio</span>
+                      {selectedPieType === 'activity' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedPieType('summary');
+                        setIsPieDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors flex items-center justify-between ${
+                        selectedPieType === 'summary'
+                          ? 'bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50/50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>Income, Expenses, Balance</span>
+                      {selectedPieType === 'summary' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <button className="text-slate-400"><MoreHorizontal size={20} /></button>
           </div>
           <div className="h-[300px] flex flex-col justify-center items-center">
-             {data.activityStats.length > 0 ? (
-               <>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={data.activityStats}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                      stroke="none"
-                    />
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-               </>
+             {selectedPieType === 'activity' ? (
+               data.activityStats.length > 0 ? (
+                 <ResponsiveContainer width="100%" height="100%">
+                   <PieChart>
+                     <Pie
+                       data={data.activityStats}
+                       cx="50%"
+                       cy="50%"
+                       innerRadius={60}
+                       outerRadius={100}
+                       paddingAngle={5}
+                       dataKey="value"
+                       stroke="none"
+                     />
+                     <Tooltip 
+                       contentStyle={{ 
+                         borderRadius: '12px', 
+                         border: 'none', 
+                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                         backgroundColor: isDarkMode ? '#1e293b' : '#fff',
+                         color: isDarkMode ? '#fff' : '#000'
+                       }}
+                       formatter={(value: any) => [`${Number(value).toLocaleString()} บาท`]}
+                     />
+                   </PieChart>
+                 </ResponsiveContainer>
+               ) : (
+                 <div className="flex items-center justify-center text-slate-400 h-full w-full bg-slate-50 dark:bg-slate-950 rounded-xl">
+                   <p className="text-sm font-medium">No activity data</p>
+                 </div>
+               )
              ) : (
-                <div className="flex items-center justify-center text-slate-400 h-full w-full bg-slate-50 rounded-xl">
-                  <p>No activity data</p>
-                </div>
+               summaryPieData.length > 0 ? (
+                 <ResponsiveContainer width="100%" height="100%">
+                   <PieChart>
+                     <Pie
+                       data={summaryPieData}
+                       cx="50%"
+                       cy="50%"
+                       innerRadius={60}
+                       outerRadius={100}
+                       paddingAngle={5}
+                       dataKey="value"
+                       stroke="none"
+                     >
+                       {summaryPieData.map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={entry.fill} />
+                       ))}
+                     </Pie>
+                     <Tooltip 
+                       contentStyle={{ 
+                         borderRadius: '12px', 
+                         border: 'none', 
+                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                         backgroundColor: isDarkMode ? '#1e293b' : '#fff',
+                         color: isDarkMode ? '#fff' : '#000'
+                       }}
+                       formatter={(value: any) => [`${Number(value).toLocaleString()} บาท`]}
+                     />
+                     <Legend 
+                       verticalAlign="bottom" 
+                       height={36}
+                       iconType="circle"
+                       content={({ payload }) => (
+                         <div className="flex justify-center gap-4 flex-wrap mt-4 text-xs font-bold text-slate-500 dark:text-slate-400">
+                           {payload?.map((entry: any, index: number) => (
+                             <div key={`legend-${index}`} className="flex items-center gap-1.5">
+                               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                               <span>{entry.value}: {Number(entry.payload?.value).toLocaleString()} บาท</span>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+                     />
+                   </PieChart>
+                 </ResponsiveContainer>
+               ) : (
+                 <div className="flex items-center justify-center text-slate-400 h-full w-full bg-slate-50 dark:bg-slate-950 rounded-xl">
+                   <p className="text-sm font-medium">No summary data</p>
+                 </div>
+               )
              )}
           </div>
         </div>

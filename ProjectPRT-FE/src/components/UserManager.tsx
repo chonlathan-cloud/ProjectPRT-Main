@@ -194,9 +194,6 @@ export const UserManager: React.FC = () => {
                       {user.email}
                     </p>
                     <div className="flex items-center gap-2 mt-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                        {user.user_id}
-                      </span>
                       {user.position && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
                           {user.position}
